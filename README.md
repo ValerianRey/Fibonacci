@@ -1,3 +1,6 @@
+# Fibonacci Incremental Network Quantization
+A Pytorch enhancement to the "Incremental Network Quantization" project that will be able to manage and test Fibonacci code quantization, using the same structure as in the original project.
+
 # Incremental Network Quantization
 A PyTorch implementation of "Incremental Network Quantization: Towards Lossless CNNs with Low-Precision Weights"
 
