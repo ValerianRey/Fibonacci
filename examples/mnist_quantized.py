@@ -5,7 +5,7 @@ import time
 import warnings
 from types import SimpleNamespace
 
-import mnist
+import examples.mnist_models as mnist_models
 from examples.print_util import Color, print_train, print_test, print_header
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
@@ -20,7 +20,8 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
-from inq.fib_util import *
+from inq.stats import *
+from inq.quantization import *
 
 import inq
 
@@ -32,32 +33,32 @@ settings_dict = {
     'data': '/project_scratch/data/mnist',  # unused
     'arch': 'resnet18',  # unused
     'workers': 8,  # Increasing that seems to require A LOT of RAM memory (default was 8)
-    'epochs': 1,
-    'start_epoch': 0,
+    'epochs': 16,
+    'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
-    'val_batch_size': 10000,
-    'lr': 0.025,  # Learning rate, default was 0.001
+    'val_batch_size': 512,  # Keep that low to have enough GPU memory for scaling validation
+    'lr': 0.1,  # Learning rate, default was 0.001
     'gamma': 0.7,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7
-    'momentum': 0.0,  # Nesterov momentum, default was 0.9
+    'momentum': 0.1,  # Gradient momentum, default was 0.9
     'weight_decay': 0.0,  # L2 regularization parameter, default was 0.0005
-    'print_interval': 20,
-    'resume': '',
+    'print_interval': 1,
+    'resume': 'saves/mnist_99.pth',  # default was ''
     'evaluate': False,
     'pretrained': True,  # unused
     'world_size': -1,
     'rank': -1,
     'dist_url': '',
     'dist_backend': '',
-    'seed': None,
+    'seed': None,  # default: None
     'gpu': None,
     'multiprocessing_distributed': False,
 
     'quantize': False,
-    'weight_bits': 5,
+    'weight_bits': 8,
     'iterative_steps': [0.0, 0.5, 0.75, 0.875, 1],  # at the last step we still need to retrain parameters that are not quantized (like the biases)
     'log_dir': "logs/",
     'tensorboard': False,
-    'print_weights_after_quantization': 'short',  # long, short, no
+    'print_weights_after_quantization': 'long',  # long, short, no
     'print_weights_after_retraining': 'no',  # long, short, no
     'print_weights_end': 'no'  # long, short, no
 }
@@ -67,7 +68,6 @@ best_acc1 = 0
 
 def main():
     args = SimpleNamespace(**settings_dict)
-
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
@@ -117,7 +117,7 @@ def main_worker(gpu, ngpus_per_node, args):
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
 
-    model = mnist.Net()
+    model = mnist_models.Net()
 
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
@@ -160,19 +160,15 @@ def main_worker(gpu, ngpus_per_node, args):
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
+            print("Loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
-            args.start_epoch = checkpoint['epoch']
-            best_acc1 = checkpoint['best_acc1']
-            if args.gpu is not None:
-                # best_acc1 may be from a checkpoint from a different GPU
-                best_acc1 = best_acc1.to(args.gpu)
+            args.start_epoch = args.epochs
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
+            print("Loaded checkpoint '{}'"
+                  .format(args.resume))
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            print(Color.RED + "No checkpoint found at '{}'".format(args.resume) + Color.END)
 
     cudnn.benchmark = True
 
@@ -231,9 +227,11 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.quantize:
             quantization_scheduler.step()
 
-        model.module.print(color=Color.GRAY, how=args.print_weights_after_quantization)
+        # model.module.print(color=Color.GRAY, how=args.print_weights_after_quantization)
 
-        print_header(color=Color.GREEN)
+        if args.start_epoch < args.epochs:
+            print_header(color=Color.GREEN)
+
         for epoch in range(args.start_epoch, args.epochs):
             if args.distributed:
                 train_sampler.set_epoch(epoch)
@@ -243,8 +241,6 @@ def main_worker(gpu, ngpus_per_node, args):
             scheduler.step()
             # evaluate on validation set
             acc1 = validate(val_loader, model, criterion, args)
-            stats = gather_stats(model.module, val_loader)
-            validate(val_loader, model, criterion, args, scale=True, stats=stats)
 
             # remember best acc@1 and save checkpoint
             best_acc1 = max(acc1, best_acc1)
@@ -252,9 +248,13 @@ def main_worker(gpu, ngpus_per_node, args):
         save_checkpoint({
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
-        }, False, filename='saves/mnist_inq_cnn.pth')
+        }, False, filename='saves/mnist_99.pth')
 
         model.module.print(color=Color.GRAY, how=args.print_weights_after_retraining)
+
+    stats = gather_stats(model.module, val_loader)
+    validate(val_loader, model, criterion, args, scale=True, stats=stats, fibonacci_encode=False)
+    validate(val_loader, model, criterion, args, scale=True, stats=stats, fibonacci_encode=True)
 
     # Save the graph to Tensorboard
     if args.tensorboard:
@@ -310,14 +310,21 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     print_train(epoch, args.epochs, len(train_loader)-1, len(train_loader), batch_time, losses, top1)
 
 
-def validate(val_loader, model, criterion, args, scale=False, stats=None):
+def validate(val_loader, model, criterion, args, scale=False, stats=None, fibonacci_encode=False):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
+    color = Color.CYAN if scale and not fibonacci_encode else Color.GREEN if scale and fibonacci_encode else ''
+    title = 'Test Int' if scale and not fibonacci_encode else 'Test Fib' if scale and fibonacci_encode else 'Test'
 
     # switch to evaluate mode
     model.eval()
+
+    if scale:
+        qmodel = compute_qmodel(model.module, stats, num_bits=args.weight_bits, fibonacci_encode=fibonacci_encode)
+        qmodel.eval()
+        qmodel.print(color=Color.GRAY, how=args.print_weights_after_quantization)
 
     with torch.no_grad():
         end = time.time()
@@ -328,7 +335,8 @@ def validate(val_loader, model, criterion, args, scale=False, stats=None):
 
             # compute output
             if scale:
-                output = quant_forward(model.module, data, stats)
+                data = data.cuda()
+                output = qmodel_forward(qmodel, data, stats, num_bits=args.weight_bits)
             else:
                 output = model(data)
 
@@ -345,9 +353,9 @@ def validate(val_loader, model, criterion, args, scale=False, stats=None):
             end = time.time()
 
             if batch_idx % args.print_interval == 0:
-                print_test(batch_idx, len(val_loader), batch_time, losses, top1, persistent=False, color=Color.CYAN if scale else '')
+                print_test(batch_idx, len(val_loader), batch_time, losses, top1, persistent=False, color=color, title=title)
 
-        print_test(len(val_loader)-1, len(val_loader), batch_time, losses, top1, persistent=True, color=Color.CYAN if scale else '')
+        print_test(len(val_loader)-1, len(val_loader), batch_time, losses, top1, persistent=True, color=color, title=title)
 
     return top1.avg
 

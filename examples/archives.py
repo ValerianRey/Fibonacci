@@ -87,3 +87,98 @@
 # weights = conv1.weight
 # print(conv1)
 # print(weights)
+
+"""Original scaling quantization inside of quantize_layer"""
+# x = scale_x * (x.float() - zp_x)  # Dequantize x
+# layer.weight.data = scale_w * (layer.weight.data - zp_w)  # Dequantize the layer weights
+# layer.bias.data = scale_b * (layer.bias.data - zp_b)  # Dequantize the layer biases
+
+# All int computation ???
+# x = (layer(x) / scale_next) + zero_point_next  # Forward pass the layer and quantize the result
+
+"""Scale tensor"""
+# def scale_tensor(x, bits=8):
+# qmax = 2 ** bits - 1
+# qmin = 0
+# with torch.no_grad():
+#     min_val = torch.min(x).item()
+#     max_val = torch.max(x).item()
+#     scale = (max_val - min_val) / (qmax - qmin)
+#     zero_point = int(max(min(qmin - min_val / scale, qmax), qmin))
+#     q_x = zero_point + x / scale
+#     q_x.clamp_(qmin, qmax).round_()
+#     q_x = q_x.round()
+#
+# return q_x
+
+"""Negative number proportion in tensor"""
+# neg_occurences = sum([1 if (value < 0) else 0 for value in layer.weight.data.view(-1)])
+# print('Negative number percentage: ' + repr(neg_occurences/len(layer.weight.data.view(-1))))
+
+"""Original int quantization scheme"""
+# def quantize_layer(x, layer, stat, scale_x, zp_x, num_bits=8, fibonacci_encode=False):
+#     # for both conv and linear layers
+#
+#     # cache old values
+#     W = layer.weight.data
+#     B = layer.bias.data
+#
+#     # # quantise weights, activations are already quantised
+#     # w, scale_w, zp_w = quantize_tensor(layer.weight.data, num_bits=num_bits)
+#     # b, scale_b, zp_b = quantize_tensor(layer.bias.data, num_bits=num_bits)
+#     #
+#     # # Turn the layer and activation into float type (even though the numbers are actually integers)
+#     # layer.weight.data = w.float()
+#     # layer.bias.data = b.float()
+#     # x = x.float()
+#     #
+#     # # Compute scale and zero_point from min and max statistics
+#     # scale_next, zero_point_next = calc_scale_zero_point(min_val=stat['min'], max_val=stat['max'], num_bits=num_bits)
+#     # combined_scale = scale_x.item() * scale_w.item() / scale_next.item()
+#     # best_mult, best_shift = get_mult_shift(combined_scale, num_bits, num_bits)
+#     # layer.weight.data = best_mult * (layer.weight.data - zp_w)
+#     # layer.bias.data = best_mult * (layer.bias.data - zp_b)
+#     #
+#     # # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
+#     # if fibonacci_encode:
+#     #     layer.weight.data = layer.weight.data.char().cpu()
+#     #     layer.weight.data.apply_(fib_code_int)
+#     #     layer.weight.data = layer.weight.data.float().cuda()
+#
+#     layer.weight.data, layer.bias.data, best_shift, zero_point_next, scale_next\
+#         = compute_quantized_layer(layer, stat, scale_x, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+#
+#     x = x.float()
+#     x = x - zp_x
+#     # All int computation
+#     x = ((layer(x) >> best_shift).round().int() + zero_point_next).float()
+#
+#     # Reset weights for next forward pass
+#     layer.weight.data = W
+#     layer.bias.data = B
+#
+#     return x, scale_next, zero_point_next
+#
+#
+# def quant_forward(model, x, stats, num_bits=8, fibonacci_encode=False):
+#     # Quantise before inputting into incoming layers
+#     x, scale, zero_point = quantize_tensor(x, num_bits=num_bits, min_val=stats['conv1']['min'], max_val=stats['conv1']['max'])
+#
+#     x, scale_next, zero_point_next = quantize_layer(x, model.conv1, stats['conv2'], scale, zero_point, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+#     x = F.relu(x)
+#
+#     x, scale_next, zero_point_next = quantize_layer(x, model.conv2, stats['fc1'], scale_next, zero_point_next, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+#     x = F.max_pool2d(x, 2)
+#     x = model.dropout1(x)
+#     x = torch.flatten(x, 1)
+#
+#     x, scale_next, zero_point_next = quantize_layer(x, model.fc1, stats['fc2'], scale_next, zero_point_next, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+#     x = F.relu(x)
+#     x = model.dropout2(x)
+#
+#     # Back to dequant for final layer
+#     x = dequantize_tensor(x, scale_next, zero_point_next)
+#
+#     x = model.fc2(x)
+#
+#     return F.log_softmax(x, dim=1)

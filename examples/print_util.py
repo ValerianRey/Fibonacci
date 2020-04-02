@@ -15,24 +15,24 @@ class Color:
 
 def print_header(color=''):
     print('Training the neural network')
-    print(Color.BOLD + color + 'Epoch'.ljust(10) + 'Batch'.ljust(14) + 'Time'.ljust(7)
-          + 'Loss (avg)'.ljust(18) + 'Top1 Acc (avg)'.ljust(22) + Color.END)
+    print(Color.BOLD + color + 'Epoch'.ljust(14) + 'Batch'.ljust(14) + 'Time'.ljust(7)
+          + 'Loss (avg)'.ljust(25) + 'Top1 Acc (avg)'.ljust(22) + Color.END)
 
 
 def print_train(epoch, total_epochs, batch_idx, batch_length, batch_time, loss, top1, persistent=True, color=''):
-    print('\r' + color + '[{0}/{1}]'.format(epoch + 1, total_epochs).ljust(10) +
+    print('\r' + color + '[{0}/{1}]'.format(epoch + 1, total_epochs).ljust(14) +
           '[{0}/{1}]'.format(batch_idx + 1, batch_length).ljust(14) +
           '{batch_time.sum:.0f}s'.format(batch_time=batch_time).ljust(7) +
-          '{loss.val:.4f} ({loss.avg:.4f})'.format(loss=loss).ljust(18) +
+          '{loss.val:.4f} ({loss.avg:.4f})'.format(loss=loss).ljust(25) +
           '{top1.val:.3f} ({top1.avg:.3f})'.format(top1=top1).ljust(22) + Color.END,
           end='\n' if persistent else '')
 
 
-def print_test(batch_idx, batch_length, batch_time, loss, top1, persistent=True, color=''):
-    print('\r' + color + 'Test'.ljust(10) +
+def print_test(batch_idx, batch_length, batch_time, loss, top1, persistent=True, color='', title='Test'):
+    print('\r' + color + title.ljust(14) +
           '[{0}/{1}]'.format(batch_idx+1, batch_length).ljust(14) +
           '{batch_time.sum:.0f}s'.format(batch_time=batch_time).ljust(7) +
-          '{loss.val:.4f} ({loss.avg:.4f})'.format(loss=loss).ljust(18) +
+          '{loss.val:.4f} ({loss.avg:.4f})'.format(loss=loss).ljust(25) +
           '{top1.val:.3f} ({top1.avg:.3f})'.format(top1=top1).ljust(22) + Color.END,
           end='\n' if persistent else '')
 

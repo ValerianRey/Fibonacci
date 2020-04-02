@@ -1,7 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="923697de-4a50-472e-a7d4-61c6f992d465" name="Default Changelist" comment="" />
+    <list default="true" id="923697de-4a50-472e-a7d4-61c6f992d465" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/codeStyles/codeStyleConfig.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/examples/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/examples/mnist_models.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/inq/quantization.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/inq/stats.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/dictionaries/val.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dictionaries/val.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Fibonacci.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/Fibonacci.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Optimizer.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/Optimizer.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/archives.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/archives.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/mnist.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/mnist_quantized.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/mnist_quantized.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/print_util.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/print_util.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/saves/mnist_inq_cnn.pth" beforeDir="false" afterPath="$PROJECT_DIR$/examples/saves/mnist_inq_cnn.pth" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/inq/fib_util.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/fib_util.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -17,6 +34,9 @@
       </list>
     </option>
   </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
   <component name="JupyterTrust" id="dcb313c2-474e-414c-86f4-d8ce2e053313" />
   <component name="ProjectId" id="1YfTBNOitVxyn8I4UU0wXLuQLnK" />
   <component name="ProjectViewState">
@@ -27,9 +47,11 @@
   </component>
   <component name="PropertiesComponent">
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
+    <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="WebServerToolWindowFactoryState" value="false" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/examples/print.py" />
-    <property name="settings.editor.selected.configurable" value="reference.settingsdialog.IDE.editor.colors.Debugger" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
+    <property name="run.code.analysis.last.selected.profile" value="aDefault" />
+    <property name="settings.editor.selected.configurable" value="preferences.sourceCode" />
   </component>
   <component name="RunManager" selected="Python.mnist_quantized">
     <configuration name="mnist" type="PythonConfigurationType" factoryName="Python">
@@ -45,7 +67,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/mnist.py" />
+      <option name="SCRIPT_NAME" value="C:\Users\val\Documents\Repos\fibonaci-coding\examples\mnist_models.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -76,7 +98,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="pytest in mnist.py" type="tests" factoryName="py.test" temporary="true" nameIsGenerated="true">
+    <configuration name="pytest in mnist_models.py" type="tests" factoryName="py.test" temporary="true" nameIsGenerated="true">
       <module name="INQ-pytorch-master" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
@@ -88,18 +110,18 @@
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="_new_keywords" value="&quot;&quot;" />
       <option name="_new_additionalArguments" value="&quot;&quot;" />
-      <option name="_new_target" value="&quot;$PROJECT_DIR$/examples/mnist.py&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/examples/mnist_models.py&quot;" />
       <option name="_new_targetType" value="&quot;PATH&quot;" />
       <method v="2" />
     </configuration>
     <list>
       <item itemvalue="Python.mnist" />
       <item itemvalue="Python.mnist_quantized" />
-      <item itemvalue="Python tests.pytest in mnist.py" />
+      <item itemvalue="Python tests.pytest in mnist_models.py" />
     </list>
     <recent_temporary>
       <list>
-        <item itemvalue="Python tests.pytest in mnist.py" />
+        <item itemvalue="Python tests.pytest in mnist_models.py" />
       </list>
     </recent_temporary>
   </component>
@@ -130,6 +152,32 @@
       <workItem from="1583870262534" duration="8720000" />
       <workItem from="1583921742005" duration="12167000" />
       <workItem from="1583936038622" duration="16855000" />
+      <workItem from="1583965784645" duration="1096000" />
+      <workItem from="1583967395489" duration="1711000" />
+      <workItem from="1584005515368" duration="2134000" />
+      <workItem from="1584014201329" duration="2877000" />
+      <workItem from="1584024442225" duration="1435000" />
+      <workItem from="1584025946806" duration="599000" />
+      <workItem from="1584188130727" duration="599000" />
+      <workItem from="1584555402651" duration="1198000" />
+      <workItem from="1584578499840" duration="1286000" />
+      <workItem from="1584604582910" duration="734000" />
+      <workItem from="1584804874710" duration="599000" />
+      <workItem from="1585081400667" duration="690000" />
+      <workItem from="1585145748258" duration="3904000" />
+      <workItem from="1585175779924" duration="14917000" />
+      <workItem from="1585213185805" duration="3225000" />
+      <workItem from="1585221741768" duration="2613000" />
+      <workItem from="1585224366822" duration="2909000" />
+      <workItem from="1585352809776" duration="637000" />
+      <workItem from="1585688727443" duration="612000" />
+      <workItem from="1585716784020" duration="8078000" />
+      <workItem from="1585773107682" duration="14503000" />
+      <workItem from="1585793076955" duration="5484000" />
+      <workItem from="1585801898232" duration="124000" />
+      <workItem from="1585802033075" duration="3181000" />
+      <workItem from="1585805764562" duration="1078000" />
+      <workItem from="1585810490623" duration="1965000" />
     </task>
     <servers />
   </component>
@@ -145,34 +193,66 @@
       <screen x="0" y="0" width="1600" height="864" />
     </state>
     <state x="259" y="118" key="#com.intellij.execution.impl.EditConfigurationsDialog/0.0.1600.864@0.0.1600.864" timestamp="1583512839934" />
-    <state x="542" y="235" key="#com.intellij.fileTypes.FileTypeChooser" timestamp="1583419038931">
+    <state x="542" y="235" key="#com.intellij.fileTypes.FileTypeChooser" timestamp="1585805185043">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state x="542" y="235" key="#com.intellij.fileTypes.FileTypeChooser/0.0.1600.864@0.0.1600.864" timestamp="1583419038931" />
+    <state x="542" y="235" key="#com.intellij.fileTypes.FileTypeChooser/0.0.1600.864@0.0.1600.864" timestamp="1585805185043" />
+    <state x="548" y="288" key="ANALYSIS_DLG_com.intellij.analysis.BaseAnalysisAction$1" timestamp="1585785192283">
+      <screen x="0" y="0" width="1600" height="864" />
+    </state>
+    <state x="548" y="288" key="ANALYSIS_DLG_com.intellij.analysis.BaseAnalysisAction$1/0.0.1600.864@0.0.1600.864" timestamp="1585785192283" />
+    <state x="422" y="26" width="909" height="810" key="CommitChangelistDialog2" timestamp="1585224443973">
+      <screen x="0" y="0" width="1600" height="864" />
+    </state>
+    <state x="422" y="26" width="909" height="810" key="CommitChangelistDialog2/0.0.1600.864@0.0.1600.864" timestamp="1585224443973" />
+    <state x="154" y="68" key="DiffContextDialog" timestamp="1585224385841">
+      <screen x="0" y="0" width="1600" height="864" />
+    </state>
+    <state x="154" y="68" key="DiffContextDialog/0.0.1600.864@0.0.1600.864" timestamp="1585224385841" />
     <state x="585" y="218" key="FileChooserDialogImpl" timestamp="1583415203094">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
     <state x="585" y="218" key="FileChooserDialogImpl/0.0.1600.864@0.0.1600.864" timestamp="1583415203094" />
-    <state width="1557" height="316" key="GridCell.Tab.0.bottom" timestamp="1583963696009">
+    <state x="0" y="0" key="FileDocumentManager.FileCacheConflict" timestamp="1585223319139">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state width="1557" height="316" key="GridCell.Tab.0.bottom/0.0.1600.864@0.0.1600.864" timestamp="1583963696009" />
-    <state width="1557" height="316" key="GridCell.Tab.0.center" timestamp="1583963696009">
+    <state x="0" y="0" key="FileDocumentManager.FileCacheConflict/0.0.1600.864@0.0.1600.864" timestamp="1585223319139" />
+    <state width="1557" height="234" key="GridCell.Tab.0.bottom" timestamp="1585812457298">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state width="1557" height="316" key="GridCell.Tab.0.center/0.0.1600.864@0.0.1600.864" timestamp="1583963696009" />
-    <state width="1557" height="316" key="GridCell.Tab.0.left" timestamp="1583963696009">
+    <state width="1557" height="234" key="GridCell.Tab.0.bottom/0.0.1600.864@0.0.1600.864" timestamp="1585812457298" />
+    <state width="1557" height="234" key="GridCell.Tab.0.center" timestamp="1585812457298">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state width="1557" height="316" key="GridCell.Tab.0.left/0.0.1600.864@0.0.1600.864" timestamp="1583963696009" />
-    <state width="1557" height="316" key="GridCell.Tab.0.right" timestamp="1583963696009">
+    <state width="1557" height="234" key="GridCell.Tab.0.center/0.0.1600.864@0.0.1600.864" timestamp="1585812457298" />
+    <state width="1557" height="234" key="GridCell.Tab.0.left" timestamp="1585812457298">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state width="1557" height="316" key="GridCell.Tab.0.right/0.0.1600.864@0.0.1600.864" timestamp="1583963696009" />
-    <state x="302" y="64" key="SettingsEditor" timestamp="1583422657243">
+    <state width="1557" height="234" key="GridCell.Tab.0.left/0.0.1600.864@0.0.1600.864" timestamp="1585812457298" />
+    <state width="1557" height="234" key="GridCell.Tab.0.right" timestamp="1585812457298">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state x="302" y="64" key="SettingsEditor/0.0.1600.864@0.0.1600.864" timestamp="1583422657243" />
+    <state width="1557" height="234" key="GridCell.Tab.0.right/0.0.1600.864@0.0.1600.864" timestamp="1585812457298" />
+    <state width="1557" height="272" key="GridCell.Tab.1.bottom" timestamp="1585793062708">
+      <screen x="0" y="0" width="1600" height="864" />
+    </state>
+    <state width="1557" height="272" key="GridCell.Tab.1.bottom/0.0.1600.864@0.0.1600.864" timestamp="1585793062708" />
+    <state width="1557" height="272" key="GridCell.Tab.1.center" timestamp="1585793062708">
+      <screen x="0" y="0" width="1600" height="864" />
+    </state>
+    <state width="1557" height="272" key="GridCell.Tab.1.center/0.0.1600.864@0.0.1600.864" timestamp="1585793062708" />
+    <state width="1557" height="272" key="GridCell.Tab.1.left" timestamp="1585793062708">
+      <screen x="0" y="0" width="1600" height="864" />
+    </state>
+    <state width="1557" height="272" key="GridCell.Tab.1.left/0.0.1600.864@0.0.1600.864" timestamp="1585793062708" />
+    <state width="1557" height="272" key="GridCell.Tab.1.right" timestamp="1585793062708">
+      <screen x="0" y="0" width="1600" height="864" />
+    </state>
+    <state width="1557" height="272" key="GridCell.Tab.1.right/0.0.1600.864@0.0.1600.864" timestamp="1585793062708" />
+    <state x="302" y="64" key="SettingsEditor" timestamp="1585803032247">
+      <screen x="0" y="0" width="1600" height="864" />
+    </state>
+    <state x="302" y="64" key="SettingsEditor/0.0.1600.864@0.0.1600.864" timestamp="1585803032247" />
     <state x="328" y="137" key="com.intellij.execution.console.ConsoleHistoryController$MyBrowseAction$1" timestamp="1583449363807">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
@@ -181,15 +261,16 @@
       <screen x="0" y="0" width="1600" height="864" />
     </state>
     <state x="493" y="163" width="613" height="536" key="find.popup/0.0.1600.864@0.0.1600.864" timestamp="1583928559977" />
-    <state x="463" y="181" width="672" height="678" key="search.everywhere.popup" timestamp="1583922100767">
+    <state x="464" y="181" width="672" height="678" key="search.everywhere.popup" timestamp="1585717875423">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state x="463" y="181" width="672" height="678" key="search.everywhere.popup/0.0.1600.864@0.0.1600.864" timestamp="1583922100767" />
+    <state x="464" y="181" width="672" height="678" key="search.everywhere.popup/0.0.1600.864@0.0.1600.864" timestamp="1585717875423" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$pytest_in_mnist_py.coverage" NAME="pytest in mnist.py Coverage Results" MODIFIED="1583336133510" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$test.coverage" NAME="test Coverage Results" MODIFIED="1583414736700" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$mnist_quantized.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1583963695998" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/fibonaci_coding$mnist_quantized.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1585812023815" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$mnist.coverage" NAME="mnist Coverage Results" MODIFIED="1583514784172" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$imagenet_quantized_fib.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1583347018090" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
   </component>

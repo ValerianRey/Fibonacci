@@ -2,6 +2,7 @@
   <dictionary name="val">
     <words>
       <w>dequantize</w>
+      <w>qmodel</w>
       <w>quantizer</w>
     </words>
   </dictionary>
