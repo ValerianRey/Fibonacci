@@ -52,7 +52,7 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
 
     # quantise weights
     W, scale_w, zp_w = quantize_tensor(W, num_bits=num_bits)
-    B, scale_b, zp_b = quantize_tensor(B, num_bits=num_bits),
+    B, scale_b, zp_b = quantize_tensor(B, num_bits=num_bits)
 
     # Turn the layer into float type (even though the numbers are actually integers)
     W = W.float()
@@ -62,8 +62,8 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
     scale_next, zero_point_next = calc_scale_zero_point(min_val=stat['min'], max_val=stat['max'], num_bits=num_bits)
     combined_scale = scale_x.item() * scale_w.item() / scale_next.item()
     best_mult, best_shift = get_mult_shift(combined_scale, num_bits, num_bits)
-    W = best_mult * (W - zp_w)
-    B = best_mult * (B - zp_b)
+    W = W - zp_w
+    B = B - zp_b
 
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
     if fibonacci_encode:
@@ -71,7 +71,7 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
         W.apply_(fib_code_int)
         W = W.float().cuda()
 
-    return W, B, best_shift, zero_point_next, scale_next
+    return W, B, best_shift, best_mult, zero_point_next, scale_next
 
 
 def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
@@ -97,11 +97,12 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
 
     for name, layer in zip(stat_names, layers):
         stat = stats[name]
-        W, B, best_shift, zp_next, scale_next = compute_quantized_layer(layer, stat, scale, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+        W, B, best_shift, best_mult, zp_next, scale_next = compute_quantized_layer(layer, stat, scale, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
 
         layer.weight.data = W
         layer.bias.data = B
         layer.best_shift = best_shift
+        layer.best_mult = best_mult
         layer.zp = zp
         layer.zp_next = zp_next
         layer.scale_next = scale_next
@@ -116,8 +117,8 @@ def qlayer_forward(x, layer):
     x = x.float()
     x = x - layer.zp
     # All int computation
-    x = ((layer(x) >> layer.best_shift).round().int() + layer.zp_next).float()
-
+    # x = ((layer(x) >> layer.best_shift).round().int() + layer.zp_next).float()
+    x = (((layer.best_mult * layer(x).int()) / (2 ** layer.best_shift)) + layer.zp_next).float()
     return x
 
 
