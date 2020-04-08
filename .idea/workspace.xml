@@ -2,22 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="923697de-4a50-472e-a7d4-61c6f992d465" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/codeStyles/codeStyleConfig.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/mnist_models.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/inq/quantization.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/inq/stats.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/dictionaries/val.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dictionaries/val.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Fibonacci.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/Fibonacci.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Optimizer.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/Optimizer.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/archives.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/archives.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/mnist.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/mnist_quantized.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/mnist_quantized.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/print_util.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/print_util.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/saves/mnist_inq_cnn.pth" beforeDir="false" afterPath="$PROJECT_DIR$/examples/saves/mnist_inq_cnn.pth" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/inq/fib_util.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/fib_util.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/inq/quantization.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/quantization.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -178,6 +164,9 @@
       <workItem from="1585802033075" duration="3181000" />
       <workItem from="1585805764562" duration="1078000" />
       <workItem from="1585810490623" duration="1965000" />
+      <workItem from="1586138512851" duration="599000" />
+      <workItem from="1586170795192" duration="709000" />
+      <workItem from="1586337815647" duration="1587000" />
     </task>
     <servers />
   </component>

@@ -52,7 +52,7 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
 
     # quantise weights
     W, scale_w, zp_w = quantize_tensor(W, num_bits=num_bits)
-    B, scale_b, zp_b = quantize_tensor(B, num_bits=num_bits)
+    B, scale_b, zp_b = quantize_tensor(B, num_bits=num_bits),
 
     # Turn the layer into float type (even though the numbers are actually integers)
     W = W.float()
