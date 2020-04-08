@@ -49,7 +49,7 @@ settings_dict = {
     'rank': -1,
     'dist_url': '',
     'dist_backend': '',
-    'seed': 1,  # default: None
+    'seed': None,  # default: None
     'gpu': None,
     'multiprocessing_distributed': False,
 
@@ -58,7 +58,7 @@ settings_dict = {
     'iterative_steps': [0.0, 0.5, 0.75, 0.875, 1],  # at the last step we still need to retrain parameters that are not quantized (like the biases)
     'log_dir': "logs/",
     'tensorboard': False,
-    'print_weights_after_quantization': 'no',  # long, short, no
+    'print_weights_after_quantization': 'short',  # long, short, no
     'print_weights_after_retraining': 'no',  # long, short, no
     'print_weights_end': 'no'  # long, short, no
 }

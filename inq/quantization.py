@@ -22,7 +22,7 @@ def calc_scale_zero_point(min_val, max_val, num_bits=8):
 
     scale = (max_val - min_val) / (qmax - qmin)
 
-    zero_point = int(max(min(int(qmin - min_val / scale), int(qmax)), qmin))
+    zero_point = max(min(int(qmin - min_val / scale), qmax), qmin)
 
     return scale, zero_point
 
@@ -78,7 +78,7 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
     zero_point_next = 0  # TODO: verify that this is not wrong
     combined_scale = scale_x.item() * scale_w.item() / scale_next.item()
     best_mult, best_shift = get_mult_shift(combined_scale, num_bits, ACC_BITS)
-    W = W - zp_w
+    W = W # - zp_w  # zp_w is removed after the multiplications so that all computations are made with positive integers (easily fib encodable)
     B = B - zp_b
 
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
@@ -86,8 +86,11 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
         W = W.int().cpu()
         W.apply_(fib_code_int)
         W = W.float().cuda()
+        # zp_w = fib_code_int(zp_w)  # Quantize zp_w as well to only have fibonacci encoded multiplications
+        # Note that this might reduce a lot the accuracy while being very very negligible in terms of computation time gained (for the Linear layers at least,
+        # because there might be a shortcut that makes it require only 1 multiplication
 
-    return W, B, best_shift, best_mult, zero_point_next, scale_next, zp_w, zp_b
+    return W, B, best_shift, best_mult, zero_point_next, scale_next, zp_w
 
 
 def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
@@ -115,7 +118,7 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
 
     for name, layer in zip(stat_names, layers):
         stat = stats[name]
-        W, B, best_shift, best_mult, zp_next, scale_next, zp_w, zp_b = compute_quantized_layer(layer, stat, scale, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+        W, B, best_shift, best_mult, zp_next, scale_next, zp_w = compute_quantized_layer(layer, stat, scale, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
 
         layer.weight.data = W
         layer.bias.data = B
@@ -124,8 +127,16 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
         layer.zp = zp
         layer.zp_next = zp_next
         layer.scale_next = scale_next
-        layer.zp_w = zp_w
-        layer.zp_b = zp_b
+        if type(layer) == nn.Conv2d:
+            layer.zp_w_kernel = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
+                                          dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
+            layer.zp_w_kernel.weight.data.fill_(zp_w)
+            layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()  # TODO: clean that
+
+        if type(layer) == nn.Linear:
+            layer.zp_w_kernel = nn.Linear(layer.in_features, layer.out_features, bias=False)
+            layer.zp_w_kernel.weight.data.fill_(zp_w)
+            layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()  # TODO: clean that
 
         scale = layer.scale_next
         zp = layer.zp_next
@@ -138,7 +149,14 @@ def qlayer_forward(x, layer):
     x = x - layer.zp
     # All int computation
     # x = (((layer.best_mult * layer(x).int()) / (2 ** layer.best_shift)) + layer.zp_next).float()
-    x = ((layer.best_mult * layer(x).int()) // (2 ** layer.best_shift)).float()  # TODO: verify that this is not wrong (compared to line above + keeping zp_next)
+    #x = ((layer.best_mult * layer(x).int()) // (2 ** layer.best_shift)).float()  # TODO: verify that this is not wrong (compared to line above + keeping zp_next)
+
+    #l_x = layer(x).int() + (layer.zp_w * x.sum(axis=3)).int()
+    #x = ((layer.best_mult * l_x) // (2 ** layer.best_shift)).float()  # TODO: verify that this is not wrong (compared to line above + keeping zp_next)
+    l_x = layer(x) - layer.zp_w_kernel(x)
+
+    x = ((layer.best_mult * l_x.int()) // (2 ** layer.best_shift)).float()
+
     return x
 
 
