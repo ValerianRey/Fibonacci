@@ -2,10 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="923697de-4a50-472e-a7d4-61c6f992d465" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Fibonacci.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/Fibonacci.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/inq/quantization.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/quantization.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/inq/stats.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/stats.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -170,7 +167,7 @@
       <workItem from="1586170795192" duration="709000" />
       <workItem from="1586337815647" duration="3220000" />
       <workItem from="1586369089032" duration="53000" />
-      <workItem from="1586369596538" duration="9720000" />
+      <workItem from="1586369596538" duration="9805000" />
     </task>
     <servers />
   </component>
