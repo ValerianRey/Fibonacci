@@ -15,7 +15,7 @@ def calc_scale_zero_point(min_val, max_val, num_bits=8):
 
 def get_mult_shift(val, num_mult_bits=8, num_shift_bits=8):  # The default 32 bits seems to lead to bugs
     best_diff = 1000000000000000000000000000000000000
-    for mult in range(1, 2 ** num_mult_bits):
+    for mult in range(2, 2 ** num_mult_bits):
         for shift in range(1, num_shift_bits):
             s_val = val * (2 ** shift)
             if abs(s_val - mult) < best_diff:
@@ -52,7 +52,7 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
 
     # quantise weights
     W, scale_w, zp_w = quantize_tensor(W, num_bits=num_bits)
-    B, scale_b, zp_b = quantize_tensor(B, num_bits=num_bits),
+    B, scale_b, zp_b = quantize_tensor(B, num_bits=num_bits)
 
     # Turn the layer into float type (even though the numbers are actually integers)
     W = W.float()
