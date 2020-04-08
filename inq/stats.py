@@ -34,6 +34,11 @@ def gather_activation_stats(model, x, stats):
 
     update_stats(x, stats, 'fc2')
 
+    x = model.fc2(x)
+    x = F.log_softmax(x, dim=1)
+
+    update_stats(x, stats, 'out')
+
 
 # Entry function to get stats of all functions.
 def gather_stats(model, test_loader):

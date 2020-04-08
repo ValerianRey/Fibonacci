@@ -2,21 +2,37 @@ from inq.fib_util import *
 from examples.mnist_models import *
 
 
+ACC_BITS = 32
+
+
+def calc_qmin_qmax(num_bits=8, negative=False):
+    if negative:
+        qmin = - 2 ** (num_bits - 1)
+        qmax = 2. ** (num_bits - 1) - 1
+    else:
+        qmin = 0
+        qmax = 2 ** num_bits - 1
+    return qmin, qmax
+
+
 def calc_scale_zero_point(min_val, max_val, num_bits=8):
     # Calc Scale and zero point of next
-    qmin = 0.
-    qmax = 2. ** num_bits - 1.
+
+    qmin, qmax = calc_qmin_qmax(num_bits=num_bits)
 
     scale = (max_val - min_val) / (qmax - qmin)
-    zero_point = int(max(min(qmin - min_val / scale, qmax), qmin))
+
+    zero_point = int(max(min(int(qmin - min_val / scale), int(qmax)), qmin))
 
     return scale, zero_point
 
 
-def get_mult_shift(val, num_mult_bits=8, num_shift_bits=8):  # The default 32 bits seems to lead to bugs
+def get_mult_shift(val, num_mult_bits=8, num_shift_bits=32):
     best_diff = 1000000000000000000000000000000000000
+    best_mult = 1
+    best_shift = 0
     for mult in range(1, 2 ** num_mult_bits):
-        for shift in range(1, num_shift_bits):
+        for shift in range(0, num_shift_bits):
             s_val = val * (2 ** shift)
             if abs(s_val - mult) < best_diff:
                 best_diff = abs(s_val - mult)
@@ -30,8 +46,7 @@ def quantize_tensor(x, num_bits=8, min_val=None, max_val=None):
     if not min_val and not max_val:
         min_val, max_val = x.min(), x.max()
 
-    qmin = 0.
-    qmax = 2. ** num_bits - 1.
+    qmin, qmax = calc_qmin_qmax(num_bits=num_bits)
 
     scale, zero_point = calc_scale_zero_point(min_val, max_val, num_bits)
     q_x = zero_point + x / scale
@@ -62,17 +77,17 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
     scale_next, zero_point_next = calc_scale_zero_point(min_val=stat['min'], max_val=stat['max'], num_bits=num_bits)
     zero_point_next = 0  # TODO: verify that this is not wrong
     combined_scale = scale_x.item() * scale_w.item() / scale_next.item()
-    best_mult, best_shift = get_mult_shift(combined_scale, num_bits, num_bits)
+    best_mult, best_shift = get_mult_shift(combined_scale, num_bits, ACC_BITS)
     W = W - zp_w
     B = B - zp_b
 
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
     if fibonacci_encode:
-        W = W.char().cpu()
+        W = W.int().cpu()
         W.apply_(fib_code_int)
         W = W.float().cuda()
 
-    return W, B, best_shift, best_mult, zero_point_next, scale_next
+    return W, B, best_shift, best_mult, zero_point_next, scale_next, zp_w, zp_b
 
 
 def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
@@ -94,11 +109,13 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
                 stat_names.append(name)
             layers.append(layer)
 
-    layers = layers[:-1]  # we do not quantise the last layer
+    # layers = layers[:-1]  # we do not quantise the last layer
+    # stat_names.append(stat_names[-1])  # we use the stats of the last layer twice TODO: verify that this is not wrong
+    stat_names.append('out')  # TODO: verify that this is not wrong
 
     for name, layer in zip(stat_names, layers):
         stat = stats[name]
-        W, B, best_shift, best_mult, zp_next, scale_next = compute_quantized_layer(layer, stat, scale, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+        W, B, best_shift, best_mult, zp_next, scale_next, zp_w, zp_b = compute_quantized_layer(layer, stat, scale, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
 
         layer.weight.data = W
         layer.bias.data = B
@@ -107,6 +124,8 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
         layer.zp = zp
         layer.zp_next = zp_next
         layer.scale_next = scale_next
+        layer.zp_w = zp_w
+        layer.zp_b = zp_b
 
         scale = layer.scale_next
         zp = layer.zp_next
@@ -144,8 +163,6 @@ def qmodel_forward(qmodel, x, stats, num_bits=8):
     x = qmodel.dropout2(x)
 
     # Back to dequant for final layer
-    x = dequantize_tensor(x, layer.scale_next, layer.zp_next)
-
     x = qmodel.fc2(x)
 
     return F.log_softmax(x, dim=1)
