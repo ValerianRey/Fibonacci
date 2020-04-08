@@ -60,6 +60,7 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
 
     # Compute scale and zero_point from min and max statistics
     scale_next, zero_point_next = calc_scale_zero_point(min_val=stat['min'], max_val=stat['max'], num_bits=num_bits)
+    zero_point_next = 0  # TODO: verify that this is not wrong
     combined_scale = scale_x.item() * scale_w.item() / scale_next.item()
     best_mult, best_shift = get_mult_shift(combined_scale, num_bits, num_bits)
     W = W - zp_w
@@ -117,8 +118,8 @@ def qlayer_forward(x, layer):
     x = x.float()
     x = x - layer.zp
     # All int computation
-    # x = ((layer(x) >> layer.best_shift).round().int() + layer.zp_next).float()
-    x = (((layer.best_mult * layer(x).int()) / (2 ** layer.best_shift)) + layer.zp_next).float()
+    # x = (((layer.best_mult * layer(x).int()) / (2 ** layer.best_shift)) + layer.zp_next).float()
+    x = ((layer.best_mult * layer(x).int()) // (2 ** layer.best_shift)).float()  # TODO: verify that this is not wrong (compared to line above + keeping zp_next)
     return x
 
 
