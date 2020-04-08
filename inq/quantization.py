@@ -15,7 +15,7 @@ def calc_scale_zero_point(min_val, max_val, num_bits=8):
 
 def get_mult_shift(val, num_mult_bits=8, num_shift_bits=8):  # The default 32 bits seems to lead to bugs
     best_diff = 1000000000000000000000000000000000000
-    for mult in range(2, 2 ** num_mult_bits):
+    for mult in range(1, 2 ** num_mult_bits):
         for shift in range(1, num_shift_bits):
             s_val = val * (2 ** shift)
             if abs(s_val - mult) < best_diff:
@@ -64,6 +64,8 @@ def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=F
     best_mult, best_shift = get_mult_shift(combined_scale, num_bits, num_bits)
     W = best_mult * (W - zp_w)
     B = best_mult * (B - zp_b)
+
+    print(W)
 
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
     if fibonacci_encode:
