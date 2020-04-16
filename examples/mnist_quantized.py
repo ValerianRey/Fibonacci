@@ -58,7 +58,7 @@ settings_dict = {
     'iterative_steps': [0.0, 0.5, 0.75, 0.875, 1],  # at the last step we still need to retrain parameters that are not quantized (like the biases)
     'log_dir': "logs/",
     'tensorboard': False,
-    'print_weights_after_quantization': 'short',  # long, short, no
+    'print_weights_after_quantization': 'no',  # long, short, no
     'print_weights_after_retraining': 'no',  # long, short, no
     'print_weights_end': 'no'  # long, short, no
 }
@@ -248,7 +248,7 @@ def main_worker(gpu, ngpus_per_node, args):
         save_checkpoint({
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
-        }, False, filename='saves/mnist_99.pth')
+        }, False, filename='saves/mnist_99_old.pth')
 
         model.module.print(color=Color.GRAY, how=args.print_weights_after_retraining)
 

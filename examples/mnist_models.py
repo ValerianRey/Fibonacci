@@ -29,7 +29,7 @@ class Net(nn.Module):
         x = F.relu(x)  # N x 128
         x = self.dropout2(x)  # N x 128
         x = self.fc2(x)  # N x 128
-        output = F.log_softmax(x, dim=1)  # N x 10
+        output = x  # F.log_softmax(x, dim=1)  # N x 10
         return output  # N x 10
 
     def print(self, color='', how='long'):

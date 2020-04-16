@@ -147,6 +147,7 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
 def qlayer_forward(x, layer):
     x = x.float()
     x = x - layer.zp
+    #print(torch.min(x))
     # All int computation
     # x = (((layer.best_mult * layer(x).int()) / (2 ** layer.best_shift)) + layer.zp_next).float()
     #x = ((layer.best_mult * layer(x).int()) // (2 ** layer.best_shift)).float()  # TODO: verify that this is not wrong (compared to line above + keeping zp_next)
@@ -183,5 +184,5 @@ def qmodel_forward(qmodel, x, stats, num_bits=8):
     # Back to dequant for final layer
     x = qmodel.fc2(x)
 
-    return F.log_softmax(x, dim=1)
+    return x  # F.log_softmax(x, dim=1)
 
