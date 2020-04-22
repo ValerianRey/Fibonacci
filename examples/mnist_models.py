@@ -2,7 +2,7 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from examples.print_util import Color
+from examples.print_util import Color, print_layer
 
 n_iter = 0
 
@@ -32,35 +32,26 @@ class Net(nn.Module):
         output = x  # F.log_softmax(x, dim=1)  # N x 10
         return output  # N x 10
 
-    def print(self, color='', how='long'):
-        if how == 'short':
-            print("Conv2D 1 weights (head):")
-            print(color + repr(self.conv1.weight.data[:5]) + Color.END + '\n')
-            print("Conv2D 1 biases (head):")
-            print(color + repr(self.conv1.bias.data[:30]) + Color.END + '\n')
+    def print(self, how='long'):
+        if how == 'no':
+            return
+        elif how == 'long':
+            print_data = True
+        else:
+            print_data = False
 
-        if how == 'long':
-            print("Conv2D 1 weights:")
-            print(color + repr(self.conv1.weight) + Color.END + '\n')
+        layers_to_print = []
+        names_to_print = []
 
-            print("Conv2D 1 biases:")
-            print(color + repr(self.conv1.bias) + Color.END + '\n')
+        layers_to_print.append(self.conv1)
+        layers_to_print.append(self.conv2)
+        layers_to_print.append(self.fc1)
+        layers_to_print.append(self.fc2)
+        names_to_print.append("Conv2D 1")
+        names_to_print.append("Conv2D 2")
+        names_to_print.append("Linear 1")
+        names_to_print.append("Linear 2")
 
-            print("Conv2D 2 weights:")
-            print(color + repr(self.conv2.weight) + Color.END + '\n')
-
-            print("Conv2D 2 biases:")
-            print(color + repr(self.conv2.bias) + Color.END + '\n')
-
-            print("Linear 1 weights:")
-            print(color + repr(self.fc1.weight) + Color.END + '\n')
-
-            print("Linear 1 biases:")
-            print(color + repr(self.fc1.bias) + Color.END + '\n')
-
-            print("Linear 2 weights:")
-            print(color + repr(self.fc2.weight) + Color.END + '\n')
-
-            print("Linear 2 biases:")
-            print(color + repr(self.fc2.bias) + Color.END + '\n')
+        for name, layer in zip(names_to_print, layers_to_print):
+            print_layer(name, layer, print_data=print_data)
 

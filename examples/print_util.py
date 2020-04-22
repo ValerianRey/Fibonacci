@@ -36,3 +36,29 @@ def print_test(batch_idx, batch_length, batch_time, loss, top1, persistent=True,
           '{top1.val:.3f} ({top1.avg:.3f})'.format(top1=top1).ljust(22) + Color.END,
           end='\n' if persistent else '')
 
+
+def print_layer(name, layer, print_data=False):
+    title_color = ''
+    data_color = Color.GRAY
+
+    weights = layer.weight.data
+    min, max = weights.min().item(), weights.max().item()
+    print(title_color + name + " weights (min=" + repr(min) + ", max=" + repr(max) + ")" + Color.END)
+    if print_data:
+        print(data_color + repr(weights) + Color.END)
+
+    biases = layer.bias.data
+    min, max = biases.min().item(), biases.max().item()
+    print(title_color + name + " biases (min=" + repr(min) + ", max=" + repr(max) + ")" + Color.END)
+    if print_data:
+        print(data_color + repr(biases) + Color.END)
+
+    if layer.zp is None:
+        print(title_color + name + " quantization data: " + "None" + Color.END)
+    else:
+        print(title_color + name + " quantization data: " + "shift=" + repr(layer.shift)
+              + ", mult=" + repr(layer.mult) + ", zp=" + repr(layer.zp) + ", combined_scale=" + repr(layer.combined_scale)
+              + ", zp_next=" + repr(layer.zp_next) + Color.END)
+
+    print()
+

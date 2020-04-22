@@ -3,6 +3,7 @@ import random
 import shutil
 import time
 import warnings
+import pickle
 from types import SimpleNamespace
 
 import examples.mnist_models as mnist_models
@@ -10,7 +11,6 @@ from examples.print_util import Color, print_train, print_test, print_header
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
@@ -36,7 +36,7 @@ settings_dict = {
     'epochs': 16,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
-    'val_batch_size': 512,  # Keep that low to have enough GPU memory for scaling validation
+    'val_batch_size': 4096,  # Keep that low to have enough GPU memory for scaling validation
     'lr': 0.1,  # Learning rate, default was 0.001
     'gamma': 0.7,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7
     'momentum': 0.1,  # Gradient momentum, default was 0.9
@@ -58,7 +58,7 @@ settings_dict = {
     'iterative_steps': [0.0, 0.5, 0.75, 0.875, 1],  # at the last step we still need to retrain parameters that are not quantized (like the biases)
     'log_dir': "logs/",
     'tensorboard': False,
-    'print_weights_after_quantization': 'no',  # long, short, no
+    'print_weights_after_quantization': 'short',  # long, short, no
     'print_weights_after_retraining': 'no',  # long, short, no
     'print_weights_end': 'no'  # long, short, no
 }
@@ -117,7 +117,7 @@ def main_worker(gpu, ngpus_per_node, args):
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
 
-    model = mnist_models.Net()
+    para_model = mnist_models.Net()
 
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
@@ -125,33 +125,33 @@ def main_worker(gpu, ngpus_per_node, args):
         # DistributedDataParallel will use all available devices.
         if args.gpu is not None:
             torch.cuda.set_device(args.gpu)
-            model.cuda(args.gpu)
+            para_model.cuda(args.gpu)
             # When using a single GPU per process and per
             # DistributedDataParallel, we need to divide the batch size
             # ourselves based on the total number of GPUs we have
             args.batch_size = int(args.batch_size / ngpus_per_node)
             args.workers = int(args.workers / ngpus_per_node)
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+            para_model = torch.nn.parallel.DistributedDataParallel(para_model, device_ids=[args.gpu])
         else:
-            model.cuda()
+            para_model.cuda()
             # DistributedDataParallel will divide and allocate batch_size to all
             # available GPUs if device_ids are not set
-            model = torch.nn.parallel.DistributedDataParallel(model)
+            para_model = torch.nn.parallel.DistributedDataParallel(para_model)
     elif args.gpu is not None:
         torch.cuda.set_device(args.gpu)
-        model = model.cuda(args.gpu)
+        para_model = para_model.cuda(args.gpu)
     else:
         # DataParallel will divide and allocate batch_size to all available GPUs
         if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-            model.features = torch.nn.DataParallel(model.features)
-            model.cuda()
+            para_model.features = torch.nn.DataParallel(para_model.features)
+            para_model.cuda()
         else:
-            model = torch.nn.DataParallel(model).cuda()
+            para_model = torch.nn.DataParallel(para_model).cuda()
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda(args.gpu)
 
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
+    optimizer = torch.optim.SGD(para_model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
@@ -163,7 +163,7 @@ def main_worker(gpu, ngpus_per_node, args):
             print("Loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
             args.start_epoch = args.epochs
-            model.load_state_dict(checkpoint['state_dict'])
+            para_model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("Loaded checkpoint '{}'"
                   .format(args.resume))
@@ -175,7 +175,7 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.quantize:
         quantized_parameters = []
         full_precision_parameters = []
-        for name, param in model.named_parameters():
+        for name, param in para_model.named_parameters():
             if 'bn' in name or 'bias' in name:
                 full_precision_parameters.append(param)
             else:
@@ -211,7 +211,7 @@ def main_worker(gpu, ngpus_per_node, args):
         train_sampler = None
 
     if args.evaluate:
-        validate(val_loader, model, criterion, args)
+        validate(val_loader, para_model, criterion, args)
         return
 
     if args.quantize:
@@ -227,7 +227,7 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.quantize:
             quantization_scheduler.step()
 
-        # model.module.print(color=Color.GRAY, how=args.print_weights_after_quantization)
+        # model.module.print(how=args.print_weights_after_quantization)
 
         if args.start_epoch < args.epochs:
             print_header(color=Color.GREEN)
@@ -237,24 +237,32 @@ def main_worker(gpu, ngpus_per_node, args):
                 train_sampler.set_epoch(epoch)
 
             # train for one epoch
-            train(train_loader, model, criterion, optimizer, epoch, args)
+            train(train_loader, para_model, criterion, optimizer, epoch, args)
             scheduler.step()
             # evaluate on validation set
-            acc1 = validate(val_loader, model, criterion, args)
+            acc1 = validate(val_loader, para_model, criterion, args)
 
             # remember best acc@1 and save checkpoint
             best_acc1 = max(acc1, best_acc1)
         print('\n\n')
         save_checkpoint({
-            'state_dict': model.state_dict(),
+            'state_dict': para_model.state_dict(),
             'optimizer': optimizer.state_dict(),
         }, False, filename='saves/mnist_99_old.pth')
 
-        model.module.print(color=Color.GRAY, how=args.print_weights_after_retraining)
+        para_model.module.print(how=args.print_weights_after_retraining)
 
-    stats = gather_stats(model.module, val_loader)
-    validate(val_loader, model, criterion, args, scale=True, stats=stats, fibonacci_encode=False)
-    validate(val_loader, model, criterion, args, scale=True, stats=stats, fibonacci_encode=True)
+    # stats = gather_stats(para_model.module, val_loader)
+    # with open('stats.pickle', 'wb') as handle:
+    #     pickle.dump(stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print("Loading stats from save, be sure to remove this when seed is not fixed")
+    with open('stats.pickle', 'rb') as handle:
+        stats = pickle.load(handle)
+
+    validate(val_loader, para_model, criterion, args, scale=False)
+    validate(val_loader, para_model, criterion, args, scale=True, stats=stats, fibonacci_encode=False)
+    validate(val_loader, para_model, criterion, args, scale=True, stats=stats, fibonacci_encode=True)
 
     # Save the graph to Tensorboard
     if args.tensorboard:
@@ -262,21 +270,21 @@ def main_worker(gpu, ngpus_per_node, args):
         images, labels = next(iter(train_loader))
         grid = make_grid(images)
         writer.add_image('images', grid, 0)
-        writer.add_graph(model.module, images.cuda())
+        writer.add_graph(para_model.module, images.cuda())
         writer.close()
 
     # Print all the parameters of the neural network to get an idea of how the weights are quantized
-    model.module.print(color=Color.GRAY, how=args.print_weights_end)
+    para_model.module.print(how=args.print_weights_end)
 
 
-def train(train_loader, model, criterion, optimizer, epoch, args):
+def train(train_loader, para_model, criterion, optimizer, epoch, args):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
 
     # switch to train mode
-    model.train()
+    para_model.train()
 
     start = time.time()
 
@@ -286,7 +294,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         target = target.cuda(args.gpu, non_blocking=True)
 
         # compute output
-        output = model(data)
+        output = para_model(data)
         loss = criterion(output, target)
 
         # measure accuracy and record loss
@@ -310,7 +318,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     print_train(epoch, args.epochs, len(train_loader)-1, len(train_loader), batch_time, losses, top1)
 
 
-def validate(val_loader, model, criterion, args, scale=False, stats=None, fibonacci_encode=False):
+def validate(val_loader, para_model, criterion, args, scale=False, stats=None, fibonacci_encode=False):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -319,12 +327,12 @@ def validate(val_loader, model, criterion, args, scale=False, stats=None, fibona
     title = 'Test Int' if scale and not fibonacci_encode else 'Test Fib' if scale and fibonacci_encode else 'Test'
 
     # switch to evaluate mode
-    model.eval()
+    para_model.eval()
 
     if scale:
-        qmodel = compute_qmodel(model.module, stats, num_bits=args.weight_bits, fibonacci_encode=fibonacci_encode)
+        qmodel = compute_qmodel(para_model.module, stats, num_bits=args.weight_bits, fibonacci_encode=fibonacci_encode)
         qmodel.eval()
-        qmodel.print(color=Color.GRAY, how=args.print_weights_after_quantization)
+        qmodel.print(how=args.print_weights_after_quantization)
 
     with torch.no_grad():
         end = time.time()
@@ -338,7 +346,7 @@ def validate(val_loader, model, criterion, args, scale=False, stats=None, fibona
                 data = data.cuda()
                 output = qmodel_forward(qmodel, data, stats, num_bits=args.weight_bits)
             else:
-                output = model(data)
+                output = para_model(data)
 
             loss = criterion(output, target)
 

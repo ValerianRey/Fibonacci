@@ -182,3 +182,15 @@
 #     x = model.fc2(x)
 #
 #     return F.log_softmax(x, dim=1)
+
+"""Original qlayer forward (messy)"""
+# x = x - layer.zp
+# All int computation
+# x = (((layer.mult * layer(x).int()) / (2 ** layer.shift)) + layer.zp_next).float()
+# x = ((layer.mult * layer(x).int()) // (2 ** layer.shift)).float()  # TODO: verify that this is not wrong (compared to line above + keeping zp_next)
+
+# l_x = layer(x).int() + (layer.zp_w * x.sum(axis=3)).int()
+# x = ((layer.mult * l_x) // (2 ** layer.shift)).float()  # TODO: verify that this is not wrong (compared to line above + keeping zp_next)
+
+# l_x = layer(x) - layer.zp_w_kernel(x)
+
