@@ -123,15 +123,21 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
         layer.zp = zp
         layer.combined_scale = combined_scale  # Just used for testing, this is included already inside of mult and shift
         layer.zp_next = zp_next
+        layer.zp_w = zp_w
 
         if type(layer) == nn.Conv2d:
-            layer.zp_w_kernel = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
+            # layer.zp_w_kernel = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
+            #                               dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
+
+            # Use only 1 out channel since anyway all kernels are the same
+            layer.zp_w_kernel = nn.Conv2d(layer.in_channels, 1, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                           dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
             layer.zp_w_kernel.weight.data.fill_(zp_w)
             layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()  # TODO: clean that
             layer.unbiased_layer = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                              dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
             layer.unbiased_layer.weight.data = layer.weight.data
+            layer.sum_dim = 2  # TODO: make that generic
 
         if type(layer) == nn.Linear:
             layer.zp_w_kernel = nn.Linear(layer.in_features, layer.out_features, bias=False)
@@ -139,6 +145,7 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
             layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()  # TODO: clean that
             layer.unbiased_layer = nn.Linear(layer.in_features, layer.out_features, bias=False)
             layer.unbiased_layer.weight.data = layer.weight.data
+            layer.sum_dim = 1  # TODO: make that generic
 
         scale = scale_next
         zp = zp_next
@@ -146,8 +153,8 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
     return qmodel
 
 
-def qlayer_forward(x, layer):
-    log = True
+def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
+    log = False
     if log:
         print(Color.YELLOW + "x_min=" + repr(x.min().item()) + ", x_max=" + repr(x.max().item()) + Color.END)
 
@@ -155,40 +162,95 @@ def qlayer_forward(x, layer):
     zp_x_vec = torch.zeros_like(x).fill_(layer.zp)
 
     part1 = layer(q_x)
-    part2 = layer.zp_w_kernel(q_x)
-    part3 = layer.unbiased_layer(zp_x_vec)
-    part4 = layer.zp_w_kernel(zp_x_vec)
+
+    if layer.sum_dim == 1:  # For linear layers only
+        q_x_sum = torch.sum(q_x, dim=layer.sum_dim)
+        part2 = torch.unsqueeze(q_x_sum * layer.zp_w, dim=1)
+    else:
+        part2 = layer.zp_w_kernel(q_x)  # Apply the convolution with the zp_w_kernel (way less computations than with a conv layer since it only has 1 out channel)
+
+    if use_mean:
+        part3 = layer.part3
+        part4 = layer.part4
+    else:
+        part3 = layer.unbiased_layer(zp_x_vec)
+        part4 = layer.zp_w_kernel(zp_x_vec)
+
     result = part1 - part2 - part3 + part4
 
+    if layer_stats is not None:
+        layer_stats['part1'].append(torch.unsqueeze(torch.mean(part1, dim=0), dim=0))
+        layer_stats['part2'].append(torch.unsqueeze(torch.mean(part2, dim=0), dim=0))
+        layer_stats['part3'].append(torch.unsqueeze(torch.mean(part3, dim=0), dim=0))
+        layer_stats['part4'].append(torch.unsqueeze(torch.mean(part4, dim=0), dim=0))
+
     if log:
-        print(Color.PURPLE + 'result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()) + Color.END)
+        print('result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()))
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
     output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
 
     if log:
-        print(Color.DARKCYAN + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
+        print('output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()))
     return output  # result_scaled_for_next_layer is an int32 number
 
 
-def qmodel_forward(qmodel, x, stats, num_bits=8):
+def qmodel_forward(qmodel, x, stats, num_bits=8, layers_stats=None):
     # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
 
     # The first line ensures that all x are quantized with the same scale / zp
     x, _, _ = quantize_tensor(x, num_bits=num_bits, min_val=stats['conv1']['min'], max_val=stats['conv1']['max'])
     # x, _, _ = quantize_tensor(x, num_bits=num_bits)
 
-    x = qlayer_forward(x, qmodel.conv1)
+    use_mean = True
+
+    if layers_stats is not None:
+        x = qlayer_forward(x, qmodel.conv1, layers_stats[0])
+    else:
+        x = qlayer_forward(x, qmodel.conv1, use_mean=use_mean)
     x = F.relu(x)
 
-    x = qlayer_forward(x, qmodel.conv2)
+    if layers_stats is not None:
+        x = qlayer_forward(x, qmodel.conv2, layers_stats[1])
+    else:
+        x = qlayer_forward(x, qmodel.conv2, use_mean=use_mean)
     x = F.max_pool2d(x, 2)
     x = torch.flatten(x, 1)
 
-    x = qlayer_forward(x, qmodel.fc1)
+    if layers_stats is not None:
+        x = qlayer_forward(x, qmodel.fc1, layers_stats[2])
+    else:
+        x = qlayer_forward(x, qmodel.fc1, use_mean=use_mean)
     x = F.relu(x)
 
-    x = qlayer_forward(x, qmodel.fc2)
+    if layers_stats is not None:
+        x = qlayer_forward(x, qmodel.fc2, layers_stats[3])
+    else:
+        x = qlayer_forward(x, qmodel.fc2, use_mean=use_mean)
 
     return x
 
+
+# For now this works only on the baseline network (not generic)
+def enhance_qmodel(qmodel, layers_means):
+    qmodel.conv1.part1 = layers_means[0]['part1']  # part 1 is actually unused (otherwise everything would be constant)
+    qmodel.conv1.part2 = layers_means[0]['part2']
+    qmodel.conv1.part3 = layers_means[0]['part3']
+    qmodel.conv1.part4 = layers_means[0]['part4']
+
+    qmodel.conv2.part1 = layers_means[1]['part1']
+    qmodel.conv2.part2 = layers_means[1]['part2']
+    qmodel.conv2.part3 = layers_means[1]['part3']
+    qmodel.conv2.part4 = layers_means[1]['part4']
+
+    qmodel.fc1.part1 = layers_means[2]['part1']
+    qmodel.fc1.part2 = layers_means[2]['part2']
+    qmodel.fc1.part3 = layers_means[2]['part3']
+    qmodel.fc1.part4 = layers_means[2]['part4']
+
+    qmodel.fc2.part1 = layers_means[3]['part1']
+    qmodel.fc2.part2 = layers_means[3]['part2']
+    qmodel.fc2.part3 = layers_means[3]['part3']
+    qmodel.fc2.part4 = layers_means[3]['part4']
+
+    return qmodel  # Works in place but still returns qmodel
