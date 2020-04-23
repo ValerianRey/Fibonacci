@@ -156,7 +156,7 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
 def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
     log = False
     if log:
-        print(Color.YELLOW + "x_min=" + repr(x.min().item()) + ", x_max=" + repr(x.max().item()) + Color.END)
+        print(Color.GRAY + "x_min=" + repr(x.min().item()) + ", x_max=" + repr(x.max().item()) + Color.END)
 
     q_x = x
     zp_x_vec = torch.zeros_like(x).fill_(layer.zp)
@@ -185,13 +185,13 @@ def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
         layer_stats['part4'].append(torch.unsqueeze(torch.mean(part4, dim=0), dim=0))
 
     if log:
-        print('result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()))
+        print(Color.GRAY + 'result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()) + Color.END)
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
     output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
 
     if log:
-        print('output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()))
+        print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
     return output  # result_scaled_for_next_layer is an int32 number
 
 

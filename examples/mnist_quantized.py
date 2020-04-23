@@ -34,7 +34,7 @@ settings_dict = {
     'epochs': 16,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
-    'val_batch_size': 64,  # Keep that low to have enough GPU memory for scaling validation
+    'val_batch_size': 4096,  # Keep that low to have enough GPU memory for scaling validation
     'stats_batch_size': 1000,  # This should be a divider of the dataset size
     'lr': 0.1,  # Learning rate, default was 0.001
     'gamma': 0.7,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7
@@ -193,12 +193,12 @@ def main_worker(gpu, ngpus_per_node, args):
 
         para_model.module.print(how=args.print_weights_after_retraining)
 
-    # stats = gather_stats(para_model.module, val_loader, before_layer=True)
-    # with open('saves/stats.pickle', 'wb') as handle:
+    # stats = gather_stats(para_model.module, train_stats_loader, before_layer=True)
+    # with open('saves/stats_train.pickle', 'wb') as handle:
     #     pickle.dump(stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     print("Loading stats from save, be sure to remove this when seed is not fixed")
-    with open('saves/stats.pickle', 'rb') as handle:
+    with open('saves/stats_val.pickle', 'rb') as handle:
         stats = pickle.load(handle)
 
     validate(val_loader, para_model, criterion, args, scale=False)
