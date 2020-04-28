@@ -209,6 +209,8 @@ def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
 def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
     # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
 
+    qmin, qmax = calc_qmin_qmax(num_bits)
+
     # The first line ensures that all x are quantized with the same scale / zp
     low_val_input = qmodel.low_val_input
     high_val_input = qmodel.high_val_input
@@ -216,7 +218,7 @@ def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
     # x, _, _ = quantize_tensor(x, num_bits=num_bits)
 
     use_mean = True
-
+    x = torch.clamp(x, qmin, qmax)  # Clamp to be sure that we stay within the uint8 range
     if layers_stats is not None:
         x = qlayer_forward(x, qmodel.conv1, layers_stats[0])
     else:
@@ -230,12 +232,14 @@ def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
     x = F.max_pool2d(x, 2)
     x = torch.flatten(x, 1)
 
+    x = torch.clamp(x, qmin, qmax)  # Clamp to be sure that we stay within the uint8 range
     if layers_stats is not None:
         x = qlayer_forward(x, qmodel.fc1, layers_stats[2])
     else:
         x = qlayer_forward(x, qmodel.fc1, use_mean=use_mean)
     x = F.relu(x)
 
+    x = torch.clamp(x, qmin, qmax)  # Clamp to be sure that we stay within the uint8 range
     if layers_stats is not None:
         x = qlayer_forward(x, qmodel.fc2, layers_stats[3])
     else:
