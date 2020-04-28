@@ -3,16 +3,8 @@
   <component name="ChangeListManager">
     <list default="true" id="923697de-4a50-472e-a7d4-61c6f992d465" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/mnist_quantized.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/mnist_quantized.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/saves/layers_means_train_fib.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/examples/saves/layers_means_train_fib.pickle" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/saves/layers_means_train_nofib.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/examples/saves/layers_means_train_nofib.pickle" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/saves/layers_means_val_fib.pickle" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/saves/layers_means_val_nofib.pickle" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/saves/mnist_99_old.pth" beforeDir="false" afterPath="$PROJECT_DIR$/examples/saves/mnist_99_old.pth" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/saves/stats_train.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/examples/saves/stats_train.pickle" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/saves/stats_val.pickle" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/inq/quantization.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/quantization.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/inq/stats.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/stats.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -235,6 +227,7 @@
       <workItem from="1588029423601" duration="4548000" />
       <workItem from="1588047143846" duration="4210000" />
       <workItem from="1588073734476" duration="167000" />
+      <workItem from="1588076374740" duration="92000" />
     </task>
     <servers />
   </component>
@@ -329,7 +322,7 @@
     <SUITE FILE_PATH="coverage/fibonaci_coding$test.coverage" NAME="test Coverage Results" MODIFIED="1587010687027" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/inq" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$mnist_quantized.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1583963695998" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/fibonaci_coding$pytest_in_test_py.coverage" NAME="pytest in test.py Coverage Results" MODIFIED="1586966449156" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/inq" />
-    <SUITE FILE_PATH="coverage/fibonaci_coding$mnist_quantized.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1588051781834" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/fibonaci_coding$mnist_quantized.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1588076466840" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$test.coverage" NAME="test Coverage Results" MODIFIED="1583414736700" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$pytest_in_mnist_py.coverage" NAME="pytest in mnist.py Coverage Results" MODIFIED="1583336133510" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
   </component>

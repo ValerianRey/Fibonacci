@@ -199,8 +199,9 @@ def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
         print(Color.GRAY + 'result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()) + Color.END)
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
-    # output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
-    output = result.int() * layer.combined_scale + layer.zp_next  # just to test, TODO: remove that
+    print(layer.zp_next)
+    output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
+    # output = result.int() * layer.combined_scale + layer.zp_next  # just to test, TODO: remove that
 
     if log:
         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
