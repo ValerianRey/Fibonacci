@@ -5,19 +5,24 @@ import time
 ACC_BITS = 32
 
 
-def calc_qmin_qmax(num_bits=8, negative=False):
+def calc_qmin_qmax(num_bits=8, negative=False, fibonacci_encode=False):
     if negative:
         qmin = - 2 ** (num_bits - 1)
         qmax = 2. ** (num_bits - 1) - 1
     else:
         qmin = 0
         qmax = 2 ** num_bits - 1
+
+    if fibonacci_encode:
+        pass
+        # qmin = fib_code_int_up(qmin)
+        # qmax = fib_code_int_down(qmax)
     return qmin, qmax
 
 
-def calc_scale_zero_point(low_val, high_val, num_bits=8):
+def calc_scale_zero_point(low_val, high_val, num_bits=8, fibonacci_encode=False):
     # Calc Scale and zero point of next
-    qmin, qmax = calc_qmin_qmax(num_bits=num_bits)
+    qmin, qmax = calc_qmin_qmax(num_bits=num_bits, fibonacci_encode=fibonacci_encode)
     scale = (high_val - low_val) / (qmax - qmin)
 
     #zero_point = max(min(int(qmin - low_val / scale), qmax), qmin)
@@ -40,11 +45,11 @@ def get_mult_shift(val, num_mult_bits=8, num_shift_bits=32):
     return best_mult, best_shift
 
 
-def quantize_tensor(x, num_bits=8, low_val=None, high_val=None):
+def quantize_tensor(x, num_bits=8, low_val=None, high_val=None, fibonacci_encode=False):
     if not low_val and not high_val:
         low_val, high_val = x.min(), x.max()
 
-    scale, zero_point = calc_scale_zero_point(low_val, high_val, num_bits)
+    scale, zero_point = calc_scale_zero_point(low_val, high_val, num_bits, fibonacci_encode=fibonacci_encode)
     q_x = (zero_point + x / scale).round()
 
     return q_x, scale, zero_point  # q_x is an integer number stored as a float
@@ -61,15 +66,19 @@ def dequantize_tensor(q_x, scale, zero_point):
 
 def compute_quantized_layer(layer, low_val, high_val, scale_x, num_bits=8, fibonacci_encode=False):
     # Quantize the layer: find a an appropriate scale and zp for W, then quantize W with it and B with the same scale as W (but no zp)
-    q_w, scale_w, zp_w = quantize_tensor(layer.weight.data, num_bits=num_bits)
+    q_w, scale_w, zp_w = quantize_tensor(layer.weight.data, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
     # Maybe b should be quantized with scale=scale_w * scale_x TODO: check that
     q_b = quantize_bias(layer.bias.data, scale_w * scale_x)
 
     # Compute scale and zero_point from min and max statistics
-    scale_next, zero_point_next = calc_scale_zero_point(low_val=low_val, high_val=high_val, num_bits=num_bits)
+    scale_next, zero_point_next = calc_scale_zero_point(low_val=low_val, high_val=high_val, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
     #zero_point_next = 0  # TODO: verify that this is not wrong
     combined_scale = scale_x.item() * scale_w.item() / scale_next.item()
-    best_mult, best_shift = get_mult_shift(combined_scale, num_bits, ACC_BITS)
+
+    if fibonacci_encode:
+        best_mult, best_shift = get_mult_shift(combined_scale, num_bits-1, ACC_BITS)
+    else:
+        best_mult, best_shift = get_mult_shift(combined_scale, num_bits, ACC_BITS)
     # q_w = q_w  - zp_w  # Comment this so that zp_w is removed after the multiplications so that all computations are made with positive integers (easily fib encodable)
 
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
@@ -111,14 +120,8 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
             if len(layers) > 0:  # there is a shift of 1 in the name: for layer conv1 we use stats['conv2'] for example for the original MNIST net.
                 stat_names.append(name)
             layers.append(layer)
-    # TODO: verify that it is right to use the second line and not the first
     #stat_names.append(stat_names[-1])  # we use the stats of the last layer twice
     stat_names.append('out')
-
-    # for name, layer in qmodel.named_modules():
-    #     if type(layer) == nn.Conv2d or type(layer) == nn.Linear:
-    #         stat_names.append(name)
-    #         layers.append(layer)
 
     for name, layer in zip(stat_names, layers):
         stat = stats[name]
@@ -137,9 +140,6 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
         layer.zp_w = zp_w
 
         if type(layer) == nn.Conv2d:
-            # layer.zp_w_kernel = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
-            #                               dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
-
             # Use only 1 out channel since anyway all kernels are the same
             layer.zp_w_kernel = nn.Conv2d(layer.in_channels, 1, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                           dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
@@ -190,8 +190,6 @@ def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
     result = part1 - part2 - part3 + part4
 
     if layer_stats is not None:
-        layer_stats['part1'].append(torch.unsqueeze(torch.mean(part1, dim=0), dim=0))
-        layer_stats['part2'].append(torch.unsqueeze(torch.mean(part2, dim=0), dim=0))
         layer_stats['part3'].append(torch.unsqueeze(torch.mean(part3, dim=0), dim=0))
         layer_stats['part4'].append(torch.unsqueeze(torch.mean(part4, dim=0), dim=0))
 
@@ -199,8 +197,8 @@ def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
         print(Color.GRAY + 'result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()) + Color.END)
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
-    print(layer.zp_next)
     output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
+    print(layer.zp_next)
     # output = result.int() * layer.combined_scale + layer.zp_next  # just to test, TODO: remove that
 
     if log:
@@ -214,7 +212,7 @@ def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
     # The first line ensures that all x are quantized with the same scale / zp
     low_val_input = qmodel.low_val_input
     high_val_input = qmodel.high_val_input
-    x, _, _ = quantize_tensor(x, num_bits=num_bits, low_val=low_val_input, high_val=high_val_input)
+    x, _, _ = quantize_tensor(x, num_bits=num_bits, low_val=low_val_input, high_val=high_val_input, fibonacci_encode=False)  # never fib encode the input
     # x, _, _ = quantize_tensor(x, num_bits=num_bits)
 
     use_mean = True
@@ -248,23 +246,15 @@ def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
 
 # For now this works only on the baseline network (not generic)
 def enhance_qmodel(qmodel, layers_means):
-    qmodel.conv1.part1 = layers_means[0]['part1']  # part 1 is actually unused (otherwise everything would be constant)
-    qmodel.conv1.part2 = layers_means[0]['part2']
     qmodel.conv1.part3 = layers_means[0]['part3']
     qmodel.conv1.part4 = layers_means[0]['part4']
 
-    qmodel.conv2.part1 = layers_means[1]['part1']
-    qmodel.conv2.part2 = layers_means[1]['part2']
     qmodel.conv2.part3 = layers_means[1]['part3']
     qmodel.conv2.part4 = layers_means[1]['part4']
 
-    qmodel.fc1.part1 = layers_means[2]['part1']
-    qmodel.fc1.part2 = layers_means[2]['part2']
     qmodel.fc1.part3 = layers_means[2]['part3']
     qmodel.fc1.part4 = layers_means[2]['part4']
 
-    qmodel.fc2.part1 = layers_means[3]['part1']
-    qmodel.fc2.part2 = layers_means[3]['part2']
     qmodel.fc2.part3 = layers_means[3]['part3']
     qmodel.fc2.part4 = layers_means[3]['part4']
 
