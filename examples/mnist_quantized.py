@@ -43,7 +43,7 @@ settings_dict = {
     'print_interval': 1,
     'resume': 'saves/mnist_99.pth',  # default was ''
     'world_size': -1,
-    'seed': None,  # default: None
+    'seed': 1,  # default: None
     'gpu': None,
     'quantize': False,
     'weight_bits': 8,
@@ -64,11 +64,14 @@ def main():
         random.seed(args.seed)
         torch.manual_seed(args.seed)
         cudnn.deterministic = True
+        shuffle = False
         warnings.warn('You have chosen to seed training. '
                       'This will turn on the CUDNN deterministic setting, '
                       'which can slow down your training considerably! '
                       'You may see unexpected behavior when restarting '
                       'from checkpoints.')
+    else:
+        shuffle = True
 
     if args.gpu is not None:
         warnings.warn('You have chosen a specific GPU. This will completely '
@@ -76,10 +79,10 @@ def main():
 
     ngpus_per_node = torch.cuda.device_count()
 
-    main_worker(args.gpu, ngpus_per_node, args)
+    main_worker(args.gpu, ngpus_per_node, args, shuffle=shuffle)
 
 
-def main_worker(gpu, ngpus_per_node, args):
+def main_worker(gpu, ngpus_per_node, args, shuffle=True):
     global best_acc1
     args.gpu = gpu
 
@@ -146,17 +149,14 @@ def main_worker(gpu, ngpus_per_node, args):
             transforms.Normalize((0.1307,), (0.3081,))
         ]))
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=shuffle,
                                                num_workers=args.workers, pin_memory=True)
 
-    train_stats_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.stats_batch_size, shuffle=True,
+    train_stats_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.stats_batch_size, shuffle=shuffle,
                                                      num_workers=args.workers, pin_memory=True)
 
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.val_batch_size, shuffle=True,
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.val_batch_size, shuffle=shuffle,
                                              num_workers=args.workers, pin_memory=True)
-
-    val_stats_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.stats_batch_size, shuffle=True,
-                                                   num_workers=args.workers, pin_memory=True)
 
     if args.quantize:
         quantization_epochs = len(args.iterative_steps)
@@ -198,14 +198,14 @@ def main_worker(gpu, ngpus_per_node, args):
     #     pickle.dump(stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     print("Loading stats from save, be sure to remove this when seed is not fixed")
-    with open('saves/stats_val.pickle', 'rb') as handle:
+    with open('saves/stats_train.pickle', 'rb') as handle:
         stats = pickle.load(handle)
 
     validate(val_loader, para_model, criterion, args, scale=False)
     validate(val_loader, para_model, criterion, args, scale=True, stats=stats, fibonacci_encode=False,
-             train_stats_loader=train_stats_loader, val_stats_loader=val_stats_loader)
+             train_stats_loader=train_stats_loader)
     validate(val_loader, para_model, criterion, args, scale=True, stats=stats, fibonacci_encode=True,
-             train_stats_loader=train_stats_loader, val_stats_loader=val_stats_loader)
+             train_stats_loader=train_stats_loader)
 
     # Save the graph to Tensorboard
     if args.tensorboard:
@@ -261,7 +261,7 @@ def train(train_loader, para_model, criterion, optimizer, epoch, args):
     print_train(epoch, args.epochs, len(train_loader)-1, len(train_loader), batch_time, losses, top1)
 
 
-def validate(val_loader, para_model, criterion, args, scale=False, stats=None, fibonacci_encode=False, train_stats_loader=None, val_stats_loader=None):
+def validate(val_loader, para_model, criterion, args, scale=False, stats=None, fibonacci_encode=False, train_stats_loader=None):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -276,8 +276,8 @@ def validate(val_loader, para_model, criterion, args, scale=False, stats=None, f
         qmodel = compute_qmodel(para_model.module, stats, num_bits=args.weight_bits, fibonacci_encode=fibonacci_encode)
         qmodel.eval()
 
-        # layers_means = gather_qmodel_stats(qmodel, stats, args, val_stats_loader, save=True, fibonacci_encode=fibonacci_encode, validation=True)
-        layers_means = load_layers_means(fibonacci_encode=fibonacci_encode, validation=False)
+        # layers_means = gather_qmodel_stats(qmodel, args, train_stats_loader, save=True, fibonacci_encode=fibonacci_encode)
+        layers_means = load_layers_means(fibonacci_encode=fibonacci_encode)
 
         # print(Color.YELLOW + repr(layers_means[0]['part2']) + Color.END)
         qmodel = enhance_qmodel(qmodel, layers_means)
@@ -295,7 +295,7 @@ def validate(val_loader, para_model, criterion, args, scale=False, stats=None, f
             # compute output
             if scale:
                 data = data.cuda()
-                output = qmodel_forward(qmodel, data, stats, num_bits=args.weight_bits)
+                output = qmodel_forward(qmodel, data, num_bits=args.weight_bits)
             else:
                 output = para_model(data)
 

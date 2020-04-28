@@ -1,6 +1,6 @@
 from inq.fib_util import *
 from examples.mnist_models import *
-
+import time
 
 ACC_BITS = 32
 
@@ -15,13 +15,13 @@ def calc_qmin_qmax(num_bits=8, negative=False):
     return qmin, qmax
 
 
-def calc_scale_zero_point(min_val, max_val, num_bits=8):
+def calc_scale_zero_point(low_val, high_val, num_bits=8):
     # Calc Scale and zero point of next
     qmin, qmax = calc_qmin_qmax(num_bits=num_bits)
-    scale = (max_val - min_val) / (qmax - qmin)
+    scale = (high_val - low_val) / (qmax - qmin)
 
-    #zero_point = max(min(int(qmin - min_val / scale), qmax), qmin)
-    zero_point = int((qmin - min_val / scale).round())
+    #zero_point = max(min(int(qmin - low_val / scale), qmax), qmin)
+    zero_point = int((qmin - low_val / scale).round())
     return scale, zero_point  # zero_point needs to be int
 
 
@@ -40,11 +40,11 @@ def get_mult_shift(val, num_mult_bits=8, num_shift_bits=32):
     return best_mult, best_shift
 
 
-def quantize_tensor(x, num_bits=8, min_val=None, max_val=None):
-    if not min_val and not max_val:
-        min_val, max_val = x.min(), x.max()
+def quantize_tensor(x, num_bits=8, low_val=None, high_val=None):
+    if not low_val and not high_val:
+        low_val, high_val = x.min(), x.max()
 
-    scale, zero_point = calc_scale_zero_point(min_val, max_val, num_bits)
+    scale, zero_point = calc_scale_zero_point(low_val, high_val, num_bits)
     q_x = (zero_point + x / scale).round()
 
     return q_x, scale, zero_point  # q_x is an integer number stored as a float
@@ -59,14 +59,14 @@ def dequantize_tensor(q_x, scale, zero_point):
     return scale * (q_x.float() - zero_point)
 
 
-def compute_quantized_layer(layer, stat, scale_x, num_bits=8, fibonacci_encode=False):
+def compute_quantized_layer(layer, low_val, high_val, scale_x, num_bits=8, fibonacci_encode=False):
     # Quantize the layer: find a an appropriate scale and zp for W, then quantize W with it and B with the same scale as W (but no zp)
     q_w, scale_w, zp_w = quantize_tensor(layer.weight.data, num_bits=num_bits)
     # Maybe b should be quantized with scale=scale_w * scale_x TODO: check that
     q_b = quantize_bias(layer.bias.data, scale_w * scale_x)
 
     # Compute scale and zero_point from min and max statistics
-    scale_next, zero_point_next = calc_scale_zero_point(min_val=stat['min'], max_val=stat['max'], num_bits=num_bits)
+    scale_next, zero_point_next = calc_scale_zero_point(low_val=low_val, high_val=high_val, num_bits=num_bits)
     #zero_point_next = 0  # TODO: verify that this is not wrong
     combined_scale = scale_x.item() * scale_w.item() / scale_next.item()
     best_mult, best_shift = get_mult_shift(combined_scale, num_bits, ACC_BITS)
@@ -91,8 +91,17 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
     qmodel.load_state_dict(model.state_dict())  # copy weights and stuff
     qmodel.to(device)
 
+    # Choose which stat to use
+    low_key = 'min'
+    high_key = 'max'
+
     # Initialization
-    scale, zp = calc_scale_zero_point(min_val=stats['conv1']['min'], max_val=stats['conv1']['max'], num_bits=num_bits)
+    low_val = stats['conv1'][low_key]
+    high_val = stats['conv1'][high_key]
+    scale, zp = calc_scale_zero_point(low_val=low_val, high_val=high_val, num_bits=num_bits)
+
+    qmodel.low_val_input = low_val
+    qmodel.high_val_input = high_val
 
     layers = []
     stat_names = []
@@ -114,7 +123,9 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
     for name, layer in zip(stat_names, layers):
         stat = stats[name]
 
-        q_w, q_b, best_shift, best_mult, zp_next, scale_next, zp_w, combined_scale = compute_quantized_layer(layer, stat, scale, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+        low_val = stat[low_key]
+        high_val = stat[high_key]
+        q_w, q_b, best_shift, best_mult, zp_next, scale_next, zp_w, combined_scale = compute_quantized_layer(layer, low_val, high_val, scale, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
 
         layer.weight.data = q_w
         layer.bias.data = q_b
@@ -154,9 +165,9 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
 
 
 def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
-    log = False
+    log = True
     if log:
-        print(Color.GRAY + "x_min=" + repr(x.min().item()) + ", x_max=" + repr(x.max().item()) + Color.END)
+        print(Color.YELLOW + "x_min=" + repr(x.min().item()) + ", x_max=" + repr(x.max().item()) + Color.END)
 
     q_x = x
     zp_x_vec = torch.zeros_like(x).fill_(layer.zp)
@@ -188,18 +199,21 @@ def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
         print(Color.GRAY + 'result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()) + Color.END)
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
-    output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
+    # output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
+    output = result.int() * layer.combined_scale + layer.zp_next  # just to test, TODO: remove that
 
     if log:
         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
     return output  # result_scaled_for_next_layer is an int32 number
 
 
-def qmodel_forward(qmodel, x, stats, num_bits=8, layers_stats=None):
+def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
     # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
 
     # The first line ensures that all x are quantized with the same scale / zp
-    x, _, _ = quantize_tensor(x, num_bits=num_bits, min_val=stats['conv1']['min'], max_val=stats['conv1']['max'])
+    low_val_input = qmodel.low_val_input
+    high_val_input = qmodel.high_val_input
+    x, _, _ = quantize_tensor(x, num_bits=num_bits, low_val=low_val_input, high_val=high_val_input)
     # x, _, _ = quantize_tensor(x, num_bits=num_bits)
 
     use_mean = True

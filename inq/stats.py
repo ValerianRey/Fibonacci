@@ -40,7 +40,7 @@ def gather_activation_stats(model, x, stats):
     update_stats(x, stats, 'out')
 
 
-# Reworked Forward Pass to access activation Stats through update_stats function
+# Gathers the stats at some different places than gather_activation_stats (does not work well currently)
 def gather_activation_stats2(model, x, stats):
     update_stats(x.clone().view(x.shape[0], -1), stats, 'conv1')
     x = model.conv1(x)
@@ -83,11 +83,11 @@ def gather_stats(model, test_loader, before_layer=True):
     return final_stats
 
 
-def gather_qmodel_part_means(qmodel, data, stats, args, layers_stats):
-    qmodel_forward(qmodel, data, stats, num_bits=args.weight_bits, layers_stats=layers_stats)
+def gather_qmodel_part_means(qmodel, data, args, layers_stats):
+    qmodel_forward(qmodel, data, num_bits=args.weight_bits, layers_stats=layers_stats)
 
 
-def gather_qmodel_stats(qmodel, stats, args, loader, save=False, fibonacci_encode=False, validation=False):
+def gather_qmodel_stats(qmodel, args, loader, save=False, fibonacci_encode=False):
     device = 'cuda:0'
     print("Gathering qmodel stats...")
     qmodel.eval()
@@ -102,7 +102,7 @@ def gather_qmodel_stats(qmodel, stats, args, loader, save=False, fibonacci_encod
     with torch.no_grad():
         for data, _ in loader:
             data = data.to(device)
-            gather_qmodel_part_means(qmodel, data, stats, args, layers_stats)
+            gather_qmodel_part_means(qmodel, data, args, layers_stats)
 
     final_means = [{}, {}, {}, {}]
     # Be careful, all the elements of layers_stats[i]['partj'] have the same weight in the mean, but some of them are the averages over a smaller batch (the last batch)
@@ -117,20 +117,18 @@ def gather_qmodel_stats(qmodel, stats, args, loader, save=False, fibonacci_encod
     if save:
         print("Saving stats for later use (if seed fixed)")
         fib_str = 'fib' if fibonacci_encode else 'nofib'
-        set_str = 'val' if validation else 'train'
-        with open('saves/layers_means_' + set_str + '_' + fib_str + '.pickle', 'wb') as handle:
+        with open('saves/layers_means_train_' + fib_str + '.pickle', 'wb') as handle:
             pickle.dump(final_means, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return final_means
 
 
-def load_layers_means(fibonacci_encode=False, validation=False):
+def load_layers_means(fibonacci_encode=False):
     print("Loading layers_means from save, be sure to remove this when seed is not fixed")
 
     fib_str = 'fib' if fibonacci_encode else 'nofib'
-    set_str = 'val' if validation else 'train'
 
-    with open('saves/layers_means_' + set_str + '_' + fib_str + '.pickle', 'rb') as handle:
+    with open('saves/layers_means_train_' + fib_str + '.pickle', 'rb') as handle:
         layers_means = pickle.load(handle)
 
     return layers_means
