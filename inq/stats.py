@@ -1,6 +1,8 @@
 from inq.quantization import *
 import pickle
 import torch.utils.data
+import time
+from examples.print_util import print_gather
 
 
 # Get Min and max of x tensor, and stores it
@@ -40,40 +42,24 @@ def gather_activation_stats(model, x, stats):
     update_stats(x, stats, 'out')
 
 
-# Gathers the stats at some different places than gather_activation_stats (does not work well currently)
-def gather_activation_stats2(model, x, stats):
-    update_stats(x.clone().view(x.shape[0], -1), stats, 'conv1')
-    x = model.conv1(x)
-    x = F.relu(x)
-
-    update_stats(x.clone().view(x.shape[0], -1), stats, 'conv2')
-    x = model.conv2(x)
-    update_stats(x.clone().view(x.shape[0], -1), stats, 'fc1')
-    x = F.max_pool2d(x, 2)
-    x = torch.flatten(x, 1)
-
-    x = model.fc1(x)
-    x = F.relu(x)
-    update_stats(x, stats, 'fc2')
-
-    x = model.fc2(x)
-    update_stats(x, stats, 'out')
-
-
 # Entry function to get stats of all functions.
-def gather_stats(model, test_loader, before_layer=True):
+def gather_stats(model, loader):
     device = 'cuda:0'
-    print("Gathering stats...")
     model.eval()
     stats = {}
-    with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
-            if before_layer:
-                gather_activation_stats(model, data, stats)
-            else:
-                gather_activation_stats2(model, data, stats)
 
+    title = 'Gathering activation stats'
+    color = ''
+
+    start_time = time.clock()
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(loader):
+            elapsed_time = time.clock() - start_time
+            print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=False)
+            data, target = data.to(device), target.to(device)
+            gather_activation_stats(model, data, stats)
+
+        print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=True)
     final_stats = {}
     for key, value in stats.items():
         final_stats[key] = {"avg_max": value["max_sum"] / value["samples"], "avg_min": value["min_sum"] / value["samples"],
@@ -83,53 +69,69 @@ def gather_stats(model, test_loader, before_layer=True):
     return final_stats
 
 
+def load_or_gather_stats(model, train_stats_loader, load):
+    if load:
+        print("Loading stats from save, be sure to remove this when the quantization scheme changes")
+        with open('saves/stats_train.pickle', 'rb') as handle:
+            stats = pickle.load(handle)
+
+    else:
+        stats = gather_stats(model, train_stats_loader)
+        print("Saving stats for later use (if same quantization scheme)")
+        with open('saves/stats_train.pickle', 'wb') as handle:
+            pickle.dump(stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    return stats
+
+
 def gather_qmodel_part_means(qmodel, data, args, layers_stats):
     qmodel_forward(qmodel, data, num_bits=args.weight_bits, layers_stats=layers_stats)
 
 
-def gather_qmodel_stats(qmodel, args, loader, save=False, fibonacci_encode=False):
+def gather_qmodel_stats(qmodel, args, loader):
     device = 'cuda:0'
-    print("Gathering qmodel stats...")
     qmodel.eval()
+
+    title = 'Gathering layers means'
+    color = ''
 
     layers_stats = [{}, {}, {}, {}]  # Each element of this list corresponds to a layer
     for layer_stats in layers_stats:
-        layer_stats['part1'] = []  # Each element of this list is the average (over a batch) of the tensor of part1
-        layer_stats['part2'] = []
         layer_stats['part3'] = []
         layer_stats['part4'] = []
 
+    start_time = time.clock()
     with torch.no_grad():
-        for data, _ in loader:
+        for batch_idx, (data, _) in enumerate(loader):
+            elapsed_time = time.clock() - start_time
+            print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=False)
             data = data.to(device)
             gather_qmodel_part_means(qmodel, data, args, layers_stats)
+        print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=True)
 
     final_means = [{}, {}, {}, {}]
     # Be careful, all the elements of layers_stats[i]['partj'] have the same weight in the mean, but some of them are the averages over a smaller batch (the last batch)
     # If the loader has a batch size that divides the set total number of samples we don't have this problem
     for i in range(len(layers_stats)):
-        final_means[i]['part1'] = torch.mean(torch.cat(layers_stats[i]['part1']), dim=0)  # This is the average (over all of the dataset) of the tensor of part1
-        final_means[i]['part2'] = torch.mean(torch.cat(layers_stats[i]['part2']), dim=0)
         final_means[i]['part3'] = torch.mean(torch.cat(layers_stats[i]['part3']), dim=0)
         final_means[i]['part4'] = torch.mean(torch.cat(layers_stats[i]['part4']), dim=0)
-
     print("Gathering completed")
-    if save:
-        print("Saving stats for later use (if seed fixed)")
-        fib_str = 'fib' if fibonacci_encode else 'nofib'
-        with open('saves/layers_means_train_' + fib_str + '.pickle', 'wb') as handle:
-            pickle.dump(final_means, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return final_means
 
 
-def load_layers_means(fibonacci_encode=False):
-    print("Loading layers_means from save, be sure to remove this when seed is not fixed")
-
-    fib_str = 'fib' if fibonacci_encode else 'nofib'
-
-    with open('saves/layers_means_train_' + fib_str + '.pickle', 'rb') as handle:
-        layers_means = pickle.load(handle)
+def load_or_gather_layers_means(qmodel, args, train_stats_loader, load, fibonacci_encode):
+    if load:
+        print("Loading layers_means from save, be sure to remove this when the quantization scheme changes")
+        fib_str = 'fib' if fibonacci_encode else 'nofib'
+        with open('saves/layers_means_train_' + fib_str + '.pickle', 'rb') as handle:
+            layers_means = pickle.load(handle)
+    else:
+        layers_means = gather_qmodel_stats(qmodel, args, train_stats_loader)
+        print("Saving layes_means for later use (if same quantization scheme)")
+        fib_str = 'fib' if fibonacci_encode else 'nofib'
+        with open('saves/layers_means_train_' + fib_str + '.pickle', 'wb') as handle:
+            pickle.dump(layers_means, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return layers_means
 

@@ -13,7 +13,6 @@ import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.datasets as datasets
-import torchvision.models as models
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
@@ -23,13 +22,7 @@ from examples.metrics import *
 
 import inq
 
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
-
 settings_dict = {
-    'data': '/project_scratch/data/mnist',  # unused
-    'arch': 'resnet18',  # unused
     'workers': 8,  # Increasing that seems to require A LOT of RAM memory (default was 8)
     'epochs': 16,
     'start_epoch': 0,  # Used for faster restart
@@ -41,18 +34,18 @@ settings_dict = {
     'momentum': 0.1,  # Gradient momentum, default was 0.9
     'weight_decay': 0.0,  # L2 regularization parameter, default was 0.0005
     'print_interval': 1,
-    'resume': 'saves/mnist_99.pth',  # default was ''
-    'world_size': -1,
-    'seed': 1,  # default: None
-    'gpu': None,
+    'resume': 'saves/mnist_99_no_data_parallel.pth',  # default was ''
+    'seed': None,  # default: None
     'quantize': False,
     'weight_bits': 8,
     'iterative_steps': [0.0, 0.5, 0.75, 0.875, 1],  # at the last step we still need to retrain parameters that are not quantized (like the biases)
     'log_dir': "logs/",
     'tensorboard': False,
-    'print_weights_after_quantization': 'short',  # long, short, no
+    'print_weights_after_quantization': 'no',  # long, short, no
     'print_weights_after_retraining': 'no',  # long, short, no
-    'print_weights_end': 'no'  # long, short, no
+    'print_weights_end': 'no',  # long, short, no
+    'load_stats': True,  # Be very careful to recompute the stats when the quantization scheme changes
+    'load_layers_means': True  # Same here
 }
 
 best_acc1 = 0
@@ -73,38 +66,15 @@ def main():
     else:
         shuffle = True
 
-    if args.gpu is not None:
-        warnings.warn('You have chosen a specific GPU. This will completely '
-                      'disable data parallelism.')
-
-    ngpus_per_node = torch.cuda.device_count()
-
-    main_worker(args.gpu, ngpus_per_node, args, shuffle=shuffle)
+    main_worker(args, shuffle=shuffle)
 
 
-def main_worker(gpu, ngpus_per_node, args, shuffle=True):
+def main_worker(args, shuffle=True):
     global best_acc1
-    args.gpu = gpu
 
-    if args.gpu is not None:
-        print("Use GPU: {} for training".format(args.gpu))
-
-    para_model = mnist_models.Net()
-
-    if args.gpu is not None:
-        torch.cuda.set_device(args.gpu)
-        para_model = para_model.cuda(args.gpu)
-    else:
-        # DataParallel will divide and allocate batch_size to all available GPUs
-        if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-            para_model.features = torch.nn.DataParallel(para_model.features)
-            para_model.cuda()
-        else:
-            para_model = torch.nn.DataParallel(para_model).cuda()
-
-    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
-
-    optimizer = torch.optim.SGD(para_model.parameters(), args.lr,
+    model = mnist_models.Net().cuda()
+    criterion = nn.CrossEntropyLoss().cuda()
+    optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
@@ -114,7 +84,7 @@ def main_worker(gpu, ngpus_per_node, args, shuffle=True):
             print("Loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
             args.start_epoch = args.epochs
-            para_model.load_state_dict(checkpoint['state_dict'])
+            model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("Loaded checkpoint '{}'"
                   .format(args.resume))
@@ -126,7 +96,7 @@ def main_worker(gpu, ngpus_per_node, args, shuffle=True):
     if args.quantize:
         quantized_parameters = []
         full_precision_parameters = []
-        for name, param in para_model.named_parameters():
+        for name, param in model.named_parameters():
             if 'bn' in name or 'bias' in name:
                 full_precision_parameters.append(param)
             else:
@@ -171,40 +141,34 @@ def main_worker(gpu, ngpus_per_node, args, shuffle=True):
         if args.quantize:
             quantization_scheduler.step()
 
-        # model.module.print(how=args.print_weights_after_quantization)
+        # model.print(how=args.print_weights_after_quantization)
 
         if args.start_epoch < args.epochs:
             print_header(color=Color.GREEN)
 
         for epoch in range(args.start_epoch, args.epochs):
             # train for one epoch
-            train(train_loader, para_model, criterion, optimizer, epoch, args)
+            train(train_loader, model, criterion, optimizer, epoch, args)
             scheduler.step()
             # evaluate on validation set
-            acc1 = validate(val_loader, para_model, criterion, args)
+            acc1 = validate(val_loader, model, criterion, args)
 
             # remember best acc@1 and save checkpoint
             best_acc1 = max(acc1, best_acc1)
         print('\n\n')
         save_checkpoint({
-            'state_dict': para_model.state_dict(),
+            'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
-        }, False, filename='saves/mnist_99_old.pth')
+        }, False, filename='saves/mnist_99_no_data_parallel.pth')
 
-        para_model.module.print(how=args.print_weights_after_retraining)
+        model.print(how=args.print_weights_after_retraining)
 
-    # stats = gather_stats(para_model.module, train_stats_loader, before_layer=True)
-    # with open('saves/stats_train.pickle', 'wb') as handle:
-    #     pickle.dump(stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    stats = load_or_gather_stats(model, train_stats_loader, args.load_stats)
 
-    print("Loading stats from save, be sure to remove this when seed is not fixed")
-    with open('saves/stats_train.pickle', 'rb') as handle:
-        stats = pickle.load(handle)
-
-    validate(val_loader, para_model, criterion, args, scale=False)
-    validate(val_loader, para_model, criterion, args, scale=True, stats=stats, fibonacci_encode=False,
+    validate(val_loader, model, criterion, args, scale=False)
+    validate(val_loader, model, criterion, args, scale=True, stats=stats, fibonacci_encode=False,
              train_stats_loader=train_stats_loader)
-    validate(val_loader, para_model, criterion, args, scale=True, stats=stats, fibonacci_encode=True,
+    validate(val_loader, model, criterion, args, scale=True, stats=stats, fibonacci_encode=True,
              train_stats_loader=train_stats_loader)
 
     # Save the graph to Tensorboard
@@ -213,38 +177,35 @@ def main_worker(gpu, ngpus_per_node, args, shuffle=True):
         images, labels = next(iter(train_loader))
         grid = make_grid(images)
         writer.add_image('images', grid, 0)
-        writer.add_graph(para_model.module, images.cuda())
+        writer.add_graph(model, images.cuda())
         writer.close()
 
     # Print all the parameters of the neural network to get an idea of how the weights are quantized
-    para_model.module.print(how=args.print_weights_end)
+    model.print(how=args.print_weights_end)
 
 
-def train(train_loader, para_model, criterion, optimizer, epoch, args):
+def train(train_loader, model, criterion, optimizer, epoch, args):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
-    top5 = AverageMeter()
 
     # switch to train mode
-    para_model.train()
+    model.train()
 
     start = time.time()
 
     for batch_idx, (data, target) in enumerate(train_loader):
-        if args.gpu is not None:
-            data = data.cuda(args.gpu, non_blocking=True)
-        target = target.cuda(args.gpu, non_blocking=True)
+        data = data.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
 
         # compute output
-        output = para_model(data)
+        output = model(data)
         loss = criterion(output, target)
 
         # measure accuracy and record loss
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        acc1 = accuracy(output, target, topk=(1,))[0]
         losses.update(loss.item(), data.size(0))
         top1.update(acc1[0], data.size(0))
-        top5.update(acc5[0], data.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -261,51 +222,45 @@ def train(train_loader, para_model, criterion, optimizer, epoch, args):
     print_train(epoch, args.epochs, len(train_loader)-1, len(train_loader), batch_time, losses, top1)
 
 
-def validate(val_loader, para_model, criterion, args, scale=False, stats=None, fibonacci_encode=False, train_stats_loader=None):
+def validate(val_loader, model, criterion, args, scale=False, stats=None, fibonacci_encode=False, train_stats_loader=None):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
-    top5 = AverageMeter()
     color = Color.CYAN if scale and not fibonacci_encode else Color.GREEN if scale and fibonacci_encode else Color.PURPLE
     title = 'Test Int' if scale and not fibonacci_encode else 'Test Fib' if scale and fibonacci_encode else 'Test'
 
     # switch to evaluate mode
-    para_model.eval()
+    model.eval()
 
     if scale:
-        qmodel = compute_qmodel(para_model.module, stats, num_bits=args.weight_bits, fibonacci_encode=fibonacci_encode)
+        qmodel = compute_qmodel(model, stats, num_bits=args.weight_bits, fib=fibonacci_encode)
         qmodel.eval()
 
-        # layers_means = gather_qmodel_stats(qmodel, args, train_stats_loader, save=True, fibonacci_encode=fibonacci_encode)
-        layers_means = load_layers_means(fibonacci_encode=fibonacci_encode)
+        layers_means = load_or_gather_layers_means(qmodel, args, train_stats_loader, load=args.load_layers_means, fibonacci_encode=fibonacci_encode)
 
-        # print(Color.YELLOW + repr(layers_means[0]['part2']) + Color.END)
         qmodel = enhance_qmodel(qmodel, layers_means)
-        # print(Color.DARKCYAN + repr(qmodel.conv2.zp_w_kernel.weight.data) + Color.END)
         qmodel.print(how=args.print_weights_after_quantization)
 
     with torch.no_grad():
         end = time.time()
 
         for batch_idx, (data, target) in enumerate(val_loader):
-            if args.gpu is not None:
-                data = data.cuda(args.gpu, non_blocking=True)
-            target = target.cuda(args.gpu, non_blocking=True)
+            data = data.cuda(non_blocking=True)
+            target = target.cuda(non_blocking=True)
 
             # compute output
             if scale:
                 data = data.cuda()
                 output = qmodel_forward(qmodel, data, num_bits=args.weight_bits)
             else:
-                output = para_model(data)
+                output = model(data)
 
             loss = criterion(output, target)
 
             # measure accuracy and record loss
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            acc1 = accuracy(output, target, topk=(1,))[0]
             losses.update(loss.item(), data.size(0))
             top1.update(acc1[0], data.size(0))
-            top5.update(acc5[0], data.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)

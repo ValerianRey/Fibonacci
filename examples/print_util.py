@@ -1,3 +1,6 @@
+import torch
+
+
 class Color:
     PURPLE = '\033[95m'
     CYAN = '\033[96m'
@@ -19,18 +22,18 @@ def print_header(color=''):
           + 'Loss (avg)'.ljust(25) + 'Top1 Acc (avg)'.ljust(22) + Color.END)
 
 
-def print_train(epoch, total_epochs, batch_idx, batch_length, batch_time, loss, top1, persistent=True, color=''):
+def print_train(epoch, total_epochs, batch_idx, num_batches, batch_time, loss, top1, persistent=True, color=''):
     print('\r' + color + '[{0}/{1}]'.format(epoch + 1, total_epochs).ljust(14) +
-          '[{0}/{1}]'.format(batch_idx + 1, batch_length).ljust(14) +
+          '[{0}/{1}]'.format(batch_idx + 1, num_batches).ljust(14) +
           '{batch_time.sum:.0f}s'.format(batch_time=batch_time).ljust(7) +
           '{loss.val:.4f} ({loss.avg:.4f})'.format(loss=loss).ljust(25) +
           '{top1.val:.3f} ({top1.avg:.3f})'.format(top1=top1).ljust(22) + Color.END,
           end='\n' if persistent else '')
 
 
-def print_test(batch_idx, batch_length, batch_time, loss, top1, persistent=True, color='', title='Test'):
+def print_test(batch_idx, num_batches, batch_time, loss, top1, persistent=True, color='', title='Test'):
     print('\r' + color + title.ljust(14) +
-          '[{0}/{1}]'.format(batch_idx+1, batch_length).ljust(14) +
+          '[{0}/{1}]'.format(batch_idx + 1, num_batches).ljust(14) +
           '{batch_time.sum:.0f}s'.format(batch_time=batch_time).ljust(7) +
           '{loss.val:.4f} ({loss.avg:.4f})'.format(loss=loss).ljust(25) +
           '{top1.val:.3f} ({top1.avg:.3f})'.format(top1=top1).ljust(22) + Color.END,
@@ -57,8 +60,28 @@ def print_layer(name, layer, print_data=False):
         print(title_color + name + " quantization data: " + "None" + Color.END)
     else:
         print(title_color + name + " quantization data: " + "shift=" + repr(layer.shift)
-              + ", mult=" + repr(layer.mult) + ", zp=" + repr(layer.zp) + ", combined_scale=" + repr(layer.combined_scale)
+              + ", mult=" + repr(layer.mult) + ", zp=" + repr(layer.zp)
               + ", zp_next=" + repr(layer.zp_next) + Color.END)
 
     print()
+
+
+def print_gather(title, batch_idx, num_batches, elapsed_time, color='', persistent=False, ):
+    print('\r' + color + title.ljust(30) +
+          '[{0}/{1}]'.format(batch_idx + 1, num_batches).ljust(14) +
+          '{0:.0f}s'.format(elapsed_time).ljust(7) + Color.END,
+          end='\n' if persistent else '')
+
+
+# Counts the number of values lying outside of the [min_value, max_value] range, returns this as a tuple of 2 numbers and can print them
+def count_out(x, min_value, max_value, log=False):
+    assert isinstance(x, torch.Tensor)
+    too_low = torch.sum(x < min_value).item()
+    too_high = torch.sum(x > max_value).item()
+    color_too_low = Color.GRAY if too_low == 0 else Color.RED
+    color_too_high = Color.GRAY if too_high == 0 else Color.RED
+    if log:
+        print(Color.GRAY + 'Values clamped to min: ' + color_too_low + repr(too_low) + Color.GRAY + ' - Values clamped to max: '
+              + color_too_high + repr(too_high) + Color.END)
+    return too_low, too_high
 

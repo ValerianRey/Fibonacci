@@ -1,11 +1,11 @@
 from inq.fib_util import *
 from examples.mnist_models import *
-import time
+from examples.print_util import count_out
 
 ACC_BITS = 32
 
 
-def calc_qmin_qmax(num_bits=8, negative=False, fibonacci_encode=False):
+def calc_qmin_qmax(num_bits=8, negative=False, fib=False):
     if negative:
         qmin = - 2 ** (num_bits - 1)
         qmax = 2. ** (num_bits - 1) - 1
@@ -13,27 +13,37 @@ def calc_qmin_qmax(num_bits=8, negative=False, fibonacci_encode=False):
         qmin = 0
         qmax = 2 ** num_bits - 1
 
-    if fibonacci_encode:
-        pass
-        # qmin = fib_code_int_up(qmin)
-        # qmax = fib_code_int_down(qmax)
+    if fib:
+        qmin = 0
+        qmax = (qmax + fib_code_int_down(qmax)) // 2  # We do that to not induce a bias by the choice of qmax
     return qmin, qmax
 
 
-def calc_scale_zero_point(low_val, high_val, num_bits=8, fibonacci_encode=False):
-    # Calc Scale and zero point of next
-    qmin, qmax = calc_qmin_qmax(num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+def calc_scale_zero_point(low_val, high_val, num_bits=8, fib=False):
+    qmin, qmax = calc_qmin_qmax(num_bits=num_bits, fib=fib)
     scale = (high_val - low_val) / (qmax - qmin)
 
-    #zero_point = max(min(int(qmin - low_val / scale), qmax), qmin)
-    zero_point = int((qmin - low_val / scale).round())
-    return scale, zero_point  # zero_point needs to be int
+    zp = int((qmin - low_val / scale).round())
+    # The need to clamp zp depends on how we handle it. For example in a linear layer zp_w is only multiplied once, so it depends on what
+    # piece of hardware we use to make that multiplication (is it important to have it on uint8, or is int32 ok, or even float32?)
+    # For a conv layer, more multiplications of zp_w are required, so it might be interesting in the future to fibonacci encode the zp_w_kernel
+    # and in that case it would probably be better to have zp_w already clamped.
+    # zp_x never needs to be clamped because anyway the zp_x value will be added to a int32 accumulator, which will be clamped before needing to
+    # be in uint8 format.
+    if zp < qmin:
+        print(Color.RED + 'zp less than qmin' + Color.END)
+        zp = qmin
+    elif zp > qmax:
+        print(Color.RED + 'zp more than qmax' + Color.END)
+        zp = qmax
+
+    return scale, zp  # zero_point needs to be int
 
 
 def get_mult_shift(val, num_mult_bits=8, num_shift_bits=32):
-    best_diff = 1000000000000000000000000000000000000
     best_mult = 1
     best_shift = 0
+    best_diff = abs(val - best_mult)
     for mult in range(1, 2 ** num_mult_bits):
         for shift in range(0, num_shift_bits):
             s_val = val * (2 ** shift)
@@ -45,55 +55,34 @@ def get_mult_shift(val, num_mult_bits=8, num_shift_bits=32):
     return best_mult, best_shift
 
 
-def quantize_tensor(x, num_bits=8, low_val=None, high_val=None, fibonacci_encode=False):
-    if not low_val and not high_val:
-        low_val, high_val = x.min(), x.max()
-
-    scale, zero_point = calc_scale_zero_point(low_val, high_val, num_bits, fibonacci_encode=fibonacci_encode)
-    q_x = (zero_point + x / scale).round()
-
-    return q_x, scale, zero_point  # q_x is an integer number stored as a float
+def quantize_tensor(x, scale, zp):
+    return (zp + (x / scale)).round()
 
 
-def quantize_bias(b, scale):
-    q_b = (b / scale).round()
-    return q_b
+def dequantize_tensor(q_x, scale, zp):
+    return scale * (q_x.float() - zp)
 
 
-def dequantize_tensor(q_x, scale, zero_point):
-    return scale * (q_x.float() - zero_point)
-
-
-def compute_quantized_layer(layer, low_val, high_val, scale_x, num_bits=8, fibonacci_encode=False):
-    # Quantize the layer: find a an appropriate scale and zp for W, then quantize W with it and B with the same scale as W (but no zp)
-    q_w, scale_w, zp_w = quantize_tensor(layer.weight.data, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
-    # Maybe b should be quantized with scale=scale_w * scale_x TODO: check that
-    q_b = quantize_bias(layer.bias.data, scale_w * scale_x)
+def compute_quantized_layer(layer, low_val, high_val, scale_x, num_bits=8, fib=False):
+    low_val_w, high_val_w = layer.weight.data.min(), layer.weight.data.max()
+    scale_w, zp_w = calc_scale_zero_point(low_val_w, high_val_w, num_bits=num_bits, fib=fib)
+    q_w = quantize_tensor(layer.weight.data, scale_w, zp_w)
+    q_b = quantize_tensor(layer.bias.data, scale_w * scale_x, 0)
 
     # Compute scale and zero_point from min and max statistics
-    scale_next, zero_point_next = calc_scale_zero_point(low_val=low_val, high_val=high_val, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
-    #zero_point_next = 0  # TODO: verify that this is not wrong
+    scale_next, zp_next = calc_scale_zero_point(low_val=low_val, high_val=high_val, num_bits=num_bits, fib=False)
     combined_scale = scale_x.item() * scale_w.item() / scale_next.item()
 
-    if fibonacci_encode:
-        best_mult, best_shift = get_mult_shift(combined_scale, num_bits-1, ACC_BITS)
-    else:
-        best_mult, best_shift = get_mult_shift(combined_scale, num_bits, ACC_BITS)
-    # q_w = q_w  - zp_w  # Comment this so that zp_w is removed after the multiplications so that all computations are made with positive integers (easily fib encodable)
+    best_mult, best_shift = get_mult_shift(combined_scale, num_bits, ACC_BITS)
 
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
-    if fibonacci_encode:
-        q_w = q_w.int().cpu()
-        q_w.apply_(fib_code_int)
-        q_w = q_w.float().cuda()
-        # zp_w = fib_code_int(zp_w)  # Quantize zp_w as well to only have fibonacci encoded multiplications
-        # Note that this might reduce a lot the accuracy while being very very negligible in terms of computation time gained (for the Linear layers at least,
-        # because there might be a shortcut that makes it require only 1 multiplication
+    if fib:
+        q_w = q_w.int().cpu().apply_(fib_code_int).float().cuda()
 
-    return q_w, q_b, best_shift, best_mult, zero_point_next, scale_next, zp_w, combined_scale
+    return q_w, q_b, best_shift, best_mult, zp_next, scale_next, zp_w, combined_scale
 
 
-def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
+def compute_qmodel(model, stats, num_bits=8, fib=False):
     # Copy the model into qmodel (and its device)
     device = model.conv1.weight.device
     qmodel = type(model)()  # get a new instance
@@ -104,40 +93,40 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
     low_key = 'min'
     high_key = 'max'
 
-    # Initialization
-    low_val = stats['conv1'][low_key]
-    high_val = stats['conv1'][high_key]
-    scale, zp = calc_scale_zero_point(low_val=low_val, high_val=high_val, num_bits=num_bits)
-
-    qmodel.low_val_input = low_val
-    qmodel.high_val_input = high_val
-
     layers = []
     stat_names = []
-
     for name, layer in qmodel.named_modules():
         if type(layer) == nn.Conv2d or type(layer) == nn.Linear:
             if len(layers) > 0:  # there is a shift of 1 in the name: for layer conv1 we use stats['conv2'] for example for the original MNIST net.
                 stat_names.append(name)
             layers.append(layer)
-    #stat_names.append(stat_names[-1])  # we use the stats of the last layer twice
-    stat_names.append('out')
+    stat_names.append('out')  # This stat is actually not used since we'll hardcode the mult and shift of last layer to 1 and 0
+
+    # Initialization
+    qmodel.low_val_input = stats['conv1'][low_key]
+    qmodel.high_val_input = stats['conv1'][high_key]
+    scale, zp = calc_scale_zero_point(low_val=qmodel.low_val_input, high_val=qmodel.high_val_input, num_bits=num_bits)
 
     for name, layer in zip(stat_names, layers):
         stat = stats[name]
 
         low_val = stat[low_key]
         high_val = stat[high_key]
-        q_w, q_b, best_shift, best_mult, zp_next, scale_next, zp_w, combined_scale = compute_quantized_layer(layer, low_val, high_val, scale, num_bits=num_bits, fibonacci_encode=fibonacci_encode)
+        q_w, q_b, shift, mult, zp_next, scale_next, zp_w, combined_scale = \
+            compute_quantized_layer(layer, low_val, high_val, scale, num_bits=num_bits, fib=fib)
 
         layer.weight.data = q_w
         layer.bias.data = q_b
-        layer.shift = best_shift
-        layer.mult = best_mult
         layer.zp = zp
-        layer.combined_scale = combined_scale  # Just used for testing, this is included already inside of mult and shift
-        layer.zp_next = zp_next
         layer.zp_w = zp_w
+        if name == 'out':
+            layer.shift = 0
+            layer.mult = 1
+            layer.zp_next = 0
+        else:
+            layer.shift = shift
+            layer.mult = mult
+            layer.zp_next = zp_next
 
         if type(layer) == nn.Conv2d:
             # Use only 1 out channel since anyway all kernels are the same
@@ -164,13 +153,10 @@ def compute_qmodel(model, stats, num_bits=8, fibonacci_encode=False):
     return qmodel
 
 
-def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
-    log = True
+def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
+    log = False
     if log:
-        print(Color.YELLOW + "x_min=" + repr(x.min().item()) + ", x_max=" + repr(x.max().item()) + Color.END)
-
-    q_x = x
-    zp_x_vec = torch.zeros_like(x).fill_(layer.zp)
+        print(Color.YELLOW + "x_min=" + repr(q_x.min().item()) + ", x_max=" + repr(q_x.max().item()) + Color.END)
 
     part1 = layer(q_x)
 
@@ -184,6 +170,7 @@ def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
         part3 = layer.part3
         part4 = layer.part4
     else:
+        zp_x_vec = torch.zeros_like(q_x).fill_(layer.zp)
         part3 = layer.unbiased_layer(zp_x_vec)
         part4 = layer.zp_w_kernel(zp_x_vec)
 
@@ -198,33 +185,40 @@ def qlayer_forward(x, layer, layer_stats=None, use_mean=False):
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
     output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
-    print(layer.zp_next)
-    # output = result.int() * layer.combined_scale + layer.zp_next  # just to test, TODO: remove that
 
     if log:
         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
-    return output  # result_scaled_for_next_layer is an int32 number
+    return output  # output is an int32 number
 
 
 def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
     # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
-
-    qmin, qmax = calc_qmin_qmax(num_bits)
-
-    # The first line ensures that all x are quantized with the same scale / zp
-    low_val_input = qmodel.low_val_input
-    high_val_input = qmodel.high_val_input
-    x, _, _ = quantize_tensor(x, num_bits=num_bits, low_val=low_val_input, high_val=high_val_input, fibonacci_encode=False)  # never fib encode the input
-    # x, _, _ = quantize_tensor(x, num_bits=num_bits)
-
+    print_clamped_values = False
     use_mean = True
-    x = torch.clamp(x, qmin, qmax)  # Clamp to be sure that we stay within the uint8 range
+    if print_clamped_values:
+        print()
+
+    input_qmin, input_qmax = calc_qmin_qmax(num_bits)
+
+    scale_x, zp_x = calc_scale_zero_point(qmodel.low_val_input, qmodel.high_val_input, num_bits=num_bits, fib=False)
+    x = quantize_tensor(x, scale_x, zp_x)
+
+    too_low_sum = 0
+    too_high_sum = 0
+    too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
+    too_low_sum += too_low
+    too_high_sum += too_high
+    x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
     if layers_stats is not None:
         x = qlayer_forward(x, qmodel.conv1, layers_stats[0])
     else:
         x = qlayer_forward(x, qmodel.conv1, use_mean=use_mean)
     x = F.relu(x)
 
+    too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
+    too_low_sum += too_low
+    too_high_sum += too_high
+    x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
     if layers_stats is not None:
         x = qlayer_forward(x, qmodel.conv2, layers_stats[1])
     else:
@@ -232,14 +226,20 @@ def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
     x = F.max_pool2d(x, 2)
     x = torch.flatten(x, 1)
 
-    x = torch.clamp(x, qmin, qmax)  # Clamp to be sure that we stay within the uint8 range
+    too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
+    too_low_sum += too_low
+    too_high_sum += too_high
+    x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
     if layers_stats is not None:
         x = qlayer_forward(x, qmodel.fc1, layers_stats[2])
     else:
         x = qlayer_forward(x, qmodel.fc1, use_mean=use_mean)
     x = F.relu(x)
 
-    x = torch.clamp(x, qmin, qmax)  # Clamp to be sure that we stay within the uint8 range
+    too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
+    too_low_sum += too_low
+    too_high_sum += too_high
+    x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
     if layers_stats is not None:
         x = qlayer_forward(x, qmodel.fc2, layers_stats[3])
     else:
@@ -248,7 +248,7 @@ def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
     return x
 
 
-# For now this works only on the baseline network (not generic)
+# For now this works only on the baseline network (not generic) TODO: make that generic
 def enhance_qmodel(qmodel, layers_means):
     qmodel.conv1.part3 = layers_means[0]['part3']
     qmodel.conv1.part4 = layers_means[0]['part4']
@@ -263,3 +263,6 @@ def enhance_qmodel(qmodel, layers_means):
     qmodel.fc2.part4 = layers_means[3]['part4']
 
     return qmodel  # Works in place but still returns qmodel
+
+
+
