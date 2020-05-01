@@ -137,7 +137,7 @@ def compute_qmodel(model, stats, num_bits=8, fib=False):
             layer.unbiased_layer = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                              dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
             layer.unbiased_layer.weight.data = layer.weight.data
-            layer.sum_dim = 2  # TODO: make that generic
+            layer.is_fc = False
 
         if type(layer) == nn.Linear:
             layer.zp_w_kernel = nn.Linear(layer.in_features, layer.out_features, bias=False)
@@ -145,7 +145,7 @@ def compute_qmodel(model, stats, num_bits=8, fib=False):
             layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()  # TODO: clean that
             layer.unbiased_layer = nn.Linear(layer.in_features, layer.out_features, bias=False)
             layer.unbiased_layer.weight.data = layer.weight.data
-            layer.sum_dim = 1  # TODO: make that generic
+            layer.is_fc = True
 
         scale = scale_next
         zp = zp_next
@@ -160,8 +160,8 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
 
     part1 = layer(q_x)
 
-    if layer.sum_dim == 1:  # For linear layers only
-        q_x_sum = torch.sum(q_x, dim=layer.sum_dim)
+    if layer.is_fc:  # For linear layers only
+        q_x_sum = torch.sum(q_x, dim=1)
         part2 = torch.unsqueeze(q_x_sum * layer.zp_w, dim=1)
     else:
         part2 = layer.zp_w_kernel(q_x)  # Apply the convolution with the zp_w_kernel (way less computations than with a conv layer since it only has 1 out channel)
@@ -249,19 +249,14 @@ def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
     return x
 
 
-# For now this works only on the baseline network (not generic) TODO: make that generic
 def enhance_qmodel(qmodel, layers_means):
-    qmodel.conv1.part3 = layers_means[0]['part3']
-    qmodel.conv1.part4 = layers_means[0]['part4']
-
-    qmodel.conv2.part3 = layers_means[1]['part3']
-    qmodel.conv2.part4 = layers_means[1]['part4']
-
-    qmodel.fc1.part3 = layers_means[2]['part3']
-    qmodel.fc1.part4 = layers_means[2]['part4']
-
-    qmodel.fc2.part3 = layers_means[3]['part3']
-    qmodel.fc2.part4 = layers_means[3]['part4']
+    supported_modules = {nn.Conv2d, nn.Linear}
+    i = 0
+    for layer in qmodel.children():  # Only iterate over the main modules and not the modules contained in those
+        if type(layer) in supported_modules:
+            layer.part3 = layers_means[i]['part3']
+            layer.part4 = layers_means[i]['part4']
+            i += 1
 
     return qmodel  # Works in place but still returns qmodel
 

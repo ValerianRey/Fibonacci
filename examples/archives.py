@@ -444,3 +444,35 @@
 #     qmodel.fc2.part4 = layers_means[3]['part4']
 #
 #     return qmodel  # Works in place but still returns qmodel
+
+"""Old enhance qmodel"""
+# For now this works only on the baseline network (not generic) TODO: make that generic
+# def enhance_qmodel(qmodel, layers_means):
+#     qmodel.conv1.part3 = layers_means[0]['part3']
+#     qmodel.conv1.part4 = layers_means[0]['part4']
+#
+#     qmodel.conv2.part3 = layers_means[1]['part3']
+#     qmodel.conv2.part4 = layers_means[1]['part4']
+#
+#     qmodel.fc1.part3 = layers_means[2]['part3']
+#     qmodel.fc1.part4 = layers_means[2]['part4']
+#
+#     qmodel.fc2.part3 = layers_means[3]['part3']
+#     qmodel.fc2.part4 = layers_means[3]['part4']
+#
+#     return qmodel  # Works in place but still returns qmodel
+
+
+"""Sequential model"""
+# self.seq = nn.Sequential(
+#     nn.Conv2d(1, 32, 3),
+#     nn.ReLU(),
+#     nn.Conv2d(32, 64, 3),
+#     nn.MaxPool2d(2),
+#     nn.Dropout2d(0.25),
+#     nn.Flatten(),
+#     nn.Linear(9216, 128),
+#     nn.ReLU(),
+#     nn.Dropout2d(0.5),
+#     nn.Linear(128, 10)
+# )
