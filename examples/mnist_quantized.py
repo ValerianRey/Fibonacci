@@ -45,7 +45,7 @@ settings_dict = {
     'print_weights_after_retraining': 'no',  # long, short, no
     'print_weights_end': 'no',  # long, short, no
     'load_stats': True,  # Be very careful to recompute the stats when the quantization scheme changes
-    'load_layers_means': True  # Same here
+    'load_layers_means': False  # Same here
 }
 
 best_acc1 = 0

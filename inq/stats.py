@@ -2,6 +2,7 @@ from inq.quantization import *
 import pickle
 import torch.utils.data
 import time
+from examples.supported_modules import supported_modules
 from examples.print_util import print_gather
 
 
@@ -21,56 +22,17 @@ def update_stats(x, stats, key):
         stats[key]['min'] = min(stats[key]['min'], min(max_val))
 
 
-# TODO: generalize that
-# Reworked Forward Pass to access activation Stats through update_stats function
 def gather_activation_stats(model, x, stats):
-    # Flatten x except for the sample id dimension
-    update_stats(x.view(x.shape[0], -1), stats, 'conv1')
-    x = model.conv1(x)
-    x = F.relu(x)
-
-    update_stats(x.view(x.shape[0], -1), stats, 'conv2')
-    x = model.conv2(x)
-    x = F.max_pool2d(x, 2)
-    x = torch.flatten(x, 1)
-
-    # Here x is already flat so the view operation does not change anything
-    update_stats(x.view(x.shape[0], -1), stats, 'fc1')
-    x = model.fc1(x)
-    x = F.relu(x)
-
-    update_stats(x.view(x.shape[0], -1), stats, 'fc2')
-    x = model.fc2(x)
-
-    update_stats(x, stats, 'out')
-
-
-def gather_activation_stats_general(model, x, stats):
     model.eval()  # Switch to eval model (so that we properly handle the dropout layers for example)
-    supported_modules = {nn.Conv2d, nn.Linear}
-    for name, layer in model.named_children():
-        print(name)
+    i = 0
+    for layer in model.seq:
         if type(layer) in supported_modules:
             # x is flattened except for the sample id dimension
-            update_stats(x.view(x.shape[0], -1), stats, name)
+            update_stats(x.view(x.shape[0], -1), stats, repr(i))
+            i += 1
+        x = layer(x)
 
-    update_stats(x.clone().view(x.shape[0], -1), stats, 'conv1')
-    x = model.conv1(x)
-    x = F.relu(x)
-
-    update_stats(x.clone().view(x.shape[0], -1), stats, 'conv2')
-    x = model.conv2(x)
-    x = F.max_pool2d(x, 2)
-    x = torch.flatten(x, 1)
-
-    update_stats(x, stats, 'fc1')
-    x = model.fc1(x)
-    x = F.relu(x)
-
-    update_stats(x, stats, 'fc2')
-    x = model.fc2(x)
-
-    update_stats(x, stats, 'out')  # Useless stat
+    update_stats(x, stats, 'out')  # Useless stat, TODO: remove that
 
 
 # Entry function to get stats of all functions.
@@ -126,10 +88,12 @@ def gather_qmodel_means(qmodel, args, loader):
     title = 'Gathering layers means'
     color = ''
 
-    layers_stats = [{}, {}, {}, {}]  # Each element of this list corresponds to a layer
-    for layer_stats in layers_stats:
-        layer_stats['part3'] = []
-        layer_stats['part4'] = []
+    layers_stats = []
+    final_means = []
+    for layer in qmodel.seq:
+        if type(layer) in supported_modules:
+            layers_stats.append({'part3': [], 'part4': []})
+            final_means.append({})
 
     start_time = time.clock()
     with torch.no_grad():
@@ -159,7 +123,7 @@ def load_or_gather_layers_means(qmodel, args, train_stats_loader, load, fibonacc
             layers_means = pickle.load(handle)
     else:
         layers_means = gather_qmodel_means(qmodel, args, train_stats_loader)
-        print("Saving layes_means for later use (if same quantization scheme)")
+        print("Saving layers_means for later use (if same quantization scheme)")
         fib_str = 'fib' if fibonacci_encode else 'nofib'
         with open('saves/layers_means_train_' + fib_str + '.pickle', 'wb') as handle:
             pickle.dump(layers_means, handle, protocol=pickle.HIGHEST_PROTOCOL)

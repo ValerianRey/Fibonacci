@@ -1,6 +1,8 @@
 from inq.fib_util import *
 from examples.mnist_models import *
 from examples.print_util import count_out
+from examples.supported_modules import supported_modules
+import torch
 
 ACC_BITS = 32
 
@@ -84,7 +86,7 @@ def compute_quantized_layer(layer, low_val, high_val, scale_x, num_bits=8, fib=F
 
 def compute_qmodel(model, stats, num_bits=8, fib=False):
     # Copy the model into qmodel (and its device)
-    device = model.conv1.weight.device
+    device = torch.device('cuda')
     qmodel = type(model)()  # get a new instance
     qmodel.load_state_dict(model.state_dict())  # copy weights and stuff
     qmodel.to(device)
@@ -95,16 +97,18 @@ def compute_qmodel(model, stats, num_bits=8, fib=False):
 
     layers = []
     stat_names = []
-    for name, layer in qmodel.named_modules():
-        if type(layer) == nn.Conv2d or type(layer) == nn.Linear:
+    i = 0
+    for layer in qmodel.seq:
+        if type(layer) in supported_modules:
             if len(layers) > 0:  # there is a shift of 1 in the name: for layer conv1 we use stats['conv2'] for example for the original MNIST net.
-                stat_names.append(name)
+                stat_names.append(repr(i))
             layers.append(layer)
+            i += 1
     stat_names.append('out')  # This stat is actually not used since we'll hardcode the mult and shift of last layer to 1 and 0
 
     # Initialization
-    qmodel.low_val_input = stats['conv1'][low_key]
-    qmodel.high_val_input = stats['conv1'][high_key]
+    qmodel.low_val_input = stats['0'][low_key]
+    qmodel.high_val_input = stats['0'][high_key]
     scale, zp = calc_scale_zero_point(low_val=qmodel.low_val_input, high_val=qmodel.high_val_input, num_bits=num_bits)
 
     for name, layer in zip(stat_names, layers):
@@ -203,56 +207,30 @@ def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):
 
     scale_x, zp_x = calc_scale_zero_point(qmodel.low_val_input, qmodel.high_val_input, num_bits=num_bits, fib=False)
     x = quantize_tensor(x, scale_x, zp_x)
-
     too_low_sum = 0
     too_high_sum = 0
-    too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
-    too_low_sum += too_low
-    too_high_sum += too_high
-    x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
-    if layers_stats is not None:
-        x = qlayer_forward(x, qmodel.conv1, layers_stats[0])
-    else:
-        x = qlayer_forward(x, qmodel.conv1, use_mean=use_mean)
-    x = F.relu(x)
 
-    too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
-    too_low_sum += too_low
-    too_high_sum += too_high
-    x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
-    if layers_stats is not None:
-        x = qlayer_forward(x, qmodel.conv2, layers_stats[1])
-    else:
-        x = qlayer_forward(x, qmodel.conv2, use_mean=use_mean)
-    x = F.max_pool2d(x, 2)
-    x = torch.flatten(x, 1)
-
-    too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
-    too_low_sum += too_low
-    too_high_sum += too_high
-    x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
-    if layers_stats is not None:
-        x = qlayer_forward(x, qmodel.fc1, layers_stats[2])
-    else:
-        x = qlayer_forward(x, qmodel.fc1, use_mean=use_mean)
-    x = F.relu(x)
-
-    too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
-    too_low_sum += too_low
-    too_high_sum += too_high
-    x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
-    if layers_stats is not None:
-        x = qlayer_forward(x, qmodel.fc2, layers_stats[3])
-    else:
-        x = qlayer_forward(x, qmodel.fc2, use_mean=use_mean)
+    i = 0
+    for layer in qmodel.seq:
+        if type(layer) in supported_modules:
+            too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
+            too_low_sum += too_low
+            too_high_sum += too_high
+            x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
+            if layers_stats is not None:
+                x = qlayer_forward(x, layer, layers_stats[i])
+            else:
+                x = qlayer_forward(x, layer, use_mean=use_mean)
+            i += 1
+        else:
+            x = layer(x)
 
     return x
 
 
 def enhance_qmodel(qmodel, layers_means):
-    supported_modules = {nn.Conv2d, nn.Linear}
     i = 0
-    for layer in qmodel.children():  # Only iterate over the main modules and not the modules contained in those
+    for layer in qmodel.seq:  # Only iterate over the main modules and not the modules contained in those
         if type(layer) in supported_modules:
             layer.part3 = layers_means[i]['part3']
             layer.part4 = layers_means[i]['part4']

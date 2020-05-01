@@ -2,10 +2,11 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="923697de-4a50-472e-a7d4-61c6f992d465" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/examples/supported_modules.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Optimizer.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/Optimizer.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/archives.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/archives.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/mnist_models.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/mnist_models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/mnist_quantized.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/mnist_quantized.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/saves/layers_means_train_fib.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/examples/saves/layers_means_train_fib.pickle" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/saves/layers_means_train_nofib.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/examples/saves/layers_means_train_nofib.pickle" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/saves/stats_train.pickle" beforeDir="false" afterPath="$PROJECT_DIR$/examples/saves/stats_train.pickle" afterDir="false" />
@@ -240,7 +241,7 @@
       <workItem from="1588212435948" duration="7408000" />
       <workItem from="1588229248033" duration="2516000" />
       <workItem from="1588326954606" duration="4606000" />
-      <workItem from="1588340037504" duration="2570000" />
+      <workItem from="1588340037504" duration="5262000" />
     </task>
     <servers />
   </component>
@@ -280,22 +281,22 @@
       <screen x="0" y="0" width="1600" height="864" />
     </state>
     <state x="0" y="0" key="FileDocumentManager.FileCacheConflict/0.0.1600.864@0.0.1600.864" timestamp="1585223319139" />
-    <state width="1557" height="222" key="GridCell.Tab.0.bottom" timestamp="1588342597667">
+    <state width="1557" height="222" key="GridCell.Tab.0.bottom" timestamp="1588345235545">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state width="1557" height="222" key="GridCell.Tab.0.bottom/0.0.1600.864@0.0.1600.864" timestamp="1588342597667" />
-    <state width="1557" height="222" key="GridCell.Tab.0.center" timestamp="1588342597667">
+    <state width="1557" height="222" key="GridCell.Tab.0.bottom/0.0.1600.864@0.0.1600.864" timestamp="1588345235545" />
+    <state width="1557" height="222" key="GridCell.Tab.0.center" timestamp="1588345235545">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state width="1557" height="222" key="GridCell.Tab.0.center/0.0.1600.864@0.0.1600.864" timestamp="1588342597667" />
-    <state width="1557" height="222" key="GridCell.Tab.0.left" timestamp="1588342597667">
+    <state width="1557" height="222" key="GridCell.Tab.0.center/0.0.1600.864@0.0.1600.864" timestamp="1588345235545" />
+    <state width="1557" height="222" key="GridCell.Tab.0.left" timestamp="1588345235545">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state width="1557" height="222" key="GridCell.Tab.0.left/0.0.1600.864@0.0.1600.864" timestamp="1588342597667" />
-    <state width="1557" height="222" key="GridCell.Tab.0.right" timestamp="1588342597667">
+    <state width="1557" height="222" key="GridCell.Tab.0.left/0.0.1600.864@0.0.1600.864" timestamp="1588345235545" />
+    <state width="1557" height="222" key="GridCell.Tab.0.right" timestamp="1588345235545">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state width="1557" height="222" key="GridCell.Tab.0.right/0.0.1600.864@0.0.1600.864" timestamp="1588342597667" />
+    <state width="1557" height="222" key="GridCell.Tab.0.right/0.0.1600.864@0.0.1600.864" timestamp="1588345235545" />
     <state width="1557" height="272" key="GridCell.Tab.1.bottom" timestamp="1586997132670">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
@@ -320,10 +321,10 @@
       <screen x="0" y="0" width="1600" height="864" />
     </state>
     <state x="328" y="137" key="com.intellij.execution.console.ConsoleHistoryController$MyBrowseAction$1/0.0.1600.864@0.0.1600.864" timestamp="1583449363807" />
-    <state x="493" y="163" width="613" height="536" key="find.popup" timestamp="1588327740758">
+    <state x="493" y="163" width="613" height="536" key="find.popup" timestamp="1588345247150">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
-    <state x="493" y="163" width="613" height="536" key="find.popup/0.0.1600.864@0.0.1600.864" timestamp="1588327740758" />
+    <state x="493" y="163" width="613" height="536" key="find.popup/0.0.1600.864@0.0.1600.864" timestamp="1588345247150" />
     <state x="467" y="181" width="672" height="678" key="search.everywhere.popup" timestamp="1587597590553">
       <screen x="0" y="0" width="1600" height="864" />
     </state>
@@ -335,7 +336,7 @@
     <SUITE FILE_PATH="coverage/fibonaci_coding$test.coverage" NAME="test Coverage Results" MODIFIED="1587010687027" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/inq" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$mnist_quantized.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1583963695998" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/fibonaci_coding$pytest_in_test_py.coverage" NAME="pytest in test.py Coverage Results" MODIFIED="1586966449156" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/inq" />
-    <SUITE FILE_PATH="coverage/fibonaci_coding$mnist_quantized.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1588342597659" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/fibonaci_coding$mnist_quantized.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1588345235538" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$test.coverage" NAME="test Coverage Results" MODIFIED="1583414736700" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$pytest_in_mnist_py.coverage" NAME="pytest in mnist.py Coverage Results" MODIFIED="1583336133510" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
   </component>
