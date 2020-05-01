@@ -15,7 +15,7 @@ def calc_qmin_qmax(num_bits=8, negative=False, fib=False):
 
     if fib:
         qmin = 0
-        qmax = (qmax + fib_code_int_down(qmax)) // 2  # We do that to not induce a bias by the choice of qmax
+        qmax = (qmax + fib_code_int_down(qmax, num_bits=num_bits)) // 2  # We do that to not induce a bias by the choice of qmax
     return qmin, qmax
 
 
@@ -40,6 +40,7 @@ def calc_scale_zero_point(low_val, high_val, num_bits=8, fib=False):
     return scale, zp  # zero_point needs to be int
 
 
+# Can be very long to compute for high number of bits
 def get_mult_shift(val, num_mult_bits=8, num_shift_bits=32):
     best_mult = 1
     best_shift = 0
@@ -51,7 +52,6 @@ def get_mult_shift(val, num_mult_bits=8, num_shift_bits=32):
                 best_diff = abs(s_val - mult)
                 best_mult = mult
                 best_shift = shift
-
     return best_mult, best_shift
 
 
@@ -77,7 +77,7 @@ def compute_quantized_layer(layer, low_val, high_val, scale_x, num_bits=8, fib=F
 
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
     if fib:
-        q_w = q_w.int().cpu().apply_(fib_code_int).float().cuda()
+        q_w = q_w.int().cpu().apply_(lambda x: fib_code_int(x, num_bits=num_bits)).float().cuda()
 
     return q_w, q_b, best_shift, best_mult, zp_next, scale_next, zp_w, combined_scale
 
@@ -184,11 +184,12 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
         print(Color.GRAY + 'result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()) + Color.END)
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
-    output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
+    # We could use int instead of long for 8 bits (no risk of overflowing the int32 range)
+    output = ((layer.mult * result.long()) >> layer.shift).float() + layer.zp_next
 
     if log:
         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
-    return output  # output is an int32 number
+    return output  # output is an int number stored as float
 
 
 def qmodel_forward(qmodel, x, num_bits=8, layers_stats=None):

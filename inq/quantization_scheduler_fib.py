@@ -116,8 +116,7 @@ class INQScheduler(object):
     def quantize_weight_fib(self, weight):
         """Quantize a single weight using the Fibonacci quantization scheme.
         """
-        quantized_weight = fib_code_int(int(weight))
-        return quantized_weight
+        return
 
     def step(self):
         """Performs weight partitioning and quantization
