@@ -1,4 +1,5 @@
 import torch
+from examples.supported_modules import supported_modules
 
 
 class Color:
@@ -64,6 +65,26 @@ def print_layer(name, layer, print_data=False):
               + ", zp_next=" + repr(layer.zp_next) + Color.END)
 
     print()
+
+
+def print_seq_model(model, how='long'):
+        if how == 'no':
+            return
+        elif how == 'long':
+            print_data = True
+        else:
+            print_data = False
+
+        layers_to_print = []
+        names_to_print = []
+
+        for layer in model.seq:
+            if type(layer) in supported_modules:
+                layers_to_print.append(layer)
+                names_to_print.append(layer.__class__.__name__)
+
+        for name, layer in zip(names_to_print, layers_to_print):
+            print_layer(name, layer, print_data=print_data)
 
 
 def print_gather(title, batch_idx, num_batches, elapsed_time, color='', persistent=False, ):

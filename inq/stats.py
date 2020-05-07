@@ -62,16 +62,17 @@ def gather_stats(model, loader):
     return final_stats
 
 
-def load_or_gather_stats(model, train_stats_loader, load):
+def load_or_gather_stats(model, train_stats_loader, load, saves_path):
+    stats_path = saves_path + 'stats.pkl'
     if load:
         print("Loading stats from save, be sure to remove this when the quantization scheme changes")
-        with open('saves/stats_train.pickle', 'rb') as handle:
+        with open(stats_path, 'rb') as handle:
             stats = pickle.load(handle)
 
     else:
         stats = gather_stats(model, train_stats_loader)
         print("Saving stats for later use (if same quantization scheme)")
-        with open('saves/stats_train.pickle', 'wb') as handle:
+        with open(stats_path, 'wb') as handle:
             pickle.dump(stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return stats
@@ -104,7 +105,6 @@ def gather_qmodel_means(qmodel, args, loader):
             gather_qmodel_part_means(qmodel, data, args, layers_stats)
         print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=True)
 
-    final_means = [{}, {}, {}, {}]
     # Be careful, all the elements of layers_stats[i]['partj'] have the same weight in the mean, but some of them are the averages over a smaller batch (the last batch)
     # If the loader has a batch size that divides the set total number of samples we don't have this problem
     for i in range(len(layers_stats)):
@@ -116,16 +116,17 @@ def gather_qmodel_means(qmodel, args, loader):
 
 
 def load_or_gather_layers_means(qmodel, args, train_stats_loader, load, fibonacci_encode):
+    means_path = 'saves/' + args.dataset + '/' + args.arch + '/means_'
     if load:
         print("Loading layers_means from save, be sure to remove this when the quantization scheme changes")
         fib_str = 'fib' if fibonacci_encode else 'nofib'
-        with open('saves/layers_means_train_' + fib_str + '.pickle', 'rb') as handle:
+        with open(means_path + fib_str + '.pkl', 'rb') as handle:
             layers_means = pickle.load(handle)
     else:
         layers_means = gather_qmodel_means(qmodel, args, train_stats_loader)
         print("Saving layers_means for later use (if same quantization scheme)")
         fib_str = 'fib' if fibonacci_encode else 'nofib'
-        with open('saves/layers_means_train_' + fib_str + '.pickle', 'wb') as handle:
+        with open(means_path + fib_str + '.pkl', 'wb') as handle:
             pickle.dump(layers_means, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return layers_means

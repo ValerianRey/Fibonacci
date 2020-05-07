@@ -6,7 +6,8 @@ import warnings
 from types import SimpleNamespace
 
 import examples.mnist_models as mnist_models
-from examples.print_util import Color, print_train, print_test, print_header
+import examples.cifar10_models as cifar10_models
+from examples.print_util import *
 import torch.backends.cudnn as cudnn
 import torch.nn.parallel
 import torch.optim
@@ -23,8 +24,10 @@ from examples.metrics import *
 import inq
 
 settings_dict = {
+    'dataset': 'mnist',  # 'mnist', 'cifar10'
+    'arch': 'Net',  # 'Net', 'LeNet', 'LeNetDropout'
     'workers': 8,  # Increasing that seems to require A LOT of RAM memory (default was 8)
-    'epochs': 16,
+    'epochs': 8,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
     'val_batch_size': 4096,  # Keep that low to have enough GPU memory for scaling validation
@@ -32,9 +35,8 @@ settings_dict = {
     'lr': 0.1,  # Learning rate, default was 0.001
     'gamma': 0.7,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7
     'momentum': 0.1,  # Gradient momentum, default was 0.9
-    'weight_decay': 0.0,  # L2 regularization parameter, default was 0.0005
+    'weight_decay': 0.0005,  # L2 regularization parameter, default was 0.0005
     'print_interval': 1,
-    'resume': 'saves/mnist_99_no_data_parallel.pth',  # default was ''
     'seed': None,  # default: None
     'quantize': False,
     'weight_bits': 8,
@@ -44,8 +46,9 @@ settings_dict = {
     'print_weights_after_quantization': 'no',  # long, short, no
     'print_weights_after_retraining': 'no',  # long, short, no
     'print_weights_end': 'no',  # long, short, no
+    'load_model': True,
     'load_stats': True,  # Be very careful to recompute the stats when the quantization scheme changes
-    'load_layers_means': False  # Same here
+    'load_layers_means': True  # Same here
 }
 
 best_acc1 = 0
@@ -72,24 +75,40 @@ def main():
 def main_worker(args, shuffle=True):
     global best_acc1
 
-    model = mnist_models.Net().cuda()
+    if args.dataset == 'mnist':
+        if args.arch == 'Net':
+            model = mnist_models.Net(non_linearity=nn.ReLU).cuda()
+        elif args.arch == 'Net_sigmoid':
+            model = mnist_models.Net(non_linearity=nn.Sigmoid).cuda()
+        elif args.arch == 'Net_tanh':
+            model = mnist_models.Net(non_linearity=nn.Tanh).cuda()
+
+    elif args.dataset == 'cifar10':
+        if args.arch == 'LeNet':
+            model = cifar10_models.LeNet(dropout=False).cuda()
+        if args.arch == 'LeNetDropout':
+            model = cifar10_models.LeNet(dropout=True).cuda()
+
+    saves_path = 'saves/' + args.dataset + '/' + args.arch + '/'
+    model_path = saves_path + 'model.pth'
+
     criterion = nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
     # optionally resume from a checkpoint
-    if args.resume:
-        if os.path.isfile(args.resume):
-            print("Loading checkpoint '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume)
+    if args.load_model:
+        if os.path.isfile(model_path):
+            print("Loading checkpoint '{}'".format(model_path))
+            checkpoint = torch.load(model_path)
             args.start_epoch = args.epochs
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("Loaded checkpoint '{}'"
-                  .format(args.resume))
+                  .format(model_path))
         else:
-            print(Color.RED + "No checkpoint found at '{}'".format(args.resume) + Color.END)
+            print(Color.RED + "No checkpoint found at '{}'".format(model_path) + Color.END)
 
     cudnn.benchmark = True
 
@@ -108,16 +127,20 @@ def main_worker(args, shuffle=True):
 
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma)
 
-    train_dataset = datasets.MNIST('', train=True, download=True,
-                       transform=transforms.Compose([
+    if args.dataset == 'mnist':
+        transform = transforms.Compose([
                            transforms.ToTensor(),
-                           transforms.Normalize((0.1307,), (0.3081,))
-                       ]))
-
-    val_dataset = datasets.MNIST('', train=False, transform=transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))
-        ]))
+                           transforms.Normalize((0.1307,), (0.3081,))])
+        train_dataset = datasets.MNIST('', train=True, download=True, transform=transform)
+        val_dataset = datasets.MNIST('', train=False, transform=transform)
+    elif args.dataset == 'cifar10':
+        transform = transforms.Compose(
+            [transforms.ToTensor(),
+             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        train_dataset = datasets.CIFAR10('CIFAR10', train=True, download=True, transform=transform)
+        val_dataset = datasets.CIFAR10('CIFAR10', train=False, download=True, transform=transform)
+    else:
+        print("ERROR: no such dataset")
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=shuffle,
                                                num_workers=args.workers, pin_memory=True)
@@ -141,7 +164,7 @@ def main_worker(args, shuffle=True):
         if args.quantize:
             quantization_scheduler.step()
 
-        # model.print(how=args.print_weights_after_quantization)
+        # print_seq_model(model, how=args.print_weights_after_quantization)
 
         if args.start_epoch < args.epochs:
             print_header(color=Color.GREEN)
@@ -159,11 +182,11 @@ def main_worker(args, shuffle=True):
         save_checkpoint({
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
-        }, False, filename='saves/mnist_99_no_data_parallel.pth')
+        }, False, filename=model_path)
 
-        model.print(how=args.print_weights_after_retraining)
+        print_seq_model(model, how=args.print_weights_after_retraining)
 
-    stats = load_or_gather_stats(model, train_stats_loader, args.load_stats)
+    stats = load_or_gather_stats(model, train_stats_loader, args.load_stats, saves_path)
 
     validate(val_loader, model, criterion, args, scale=False)
     validate(val_loader, model, criterion, args, scale=True, stats=stats, fibonacci_encode=False,
@@ -181,7 +204,7 @@ def main_worker(args, shuffle=True):
         writer.close()
 
     # Print all the parameters of the neural network to get an idea of how the weights are quantized
-    model.print(how=args.print_weights_end)
+    print_seq_model(model, how=args.print_weights_end)
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
@@ -239,7 +262,7 @@ def validate(val_loader, model, criterion, args, scale=False, stats=None, fibona
         layers_means = load_or_gather_layers_means(qmodel, args, train_stats_loader, load=args.load_layers_means, fibonacci_encode=fibonacci_encode)
 
         qmodel = enhance_qmodel(qmodel, layers_means)
-        qmodel.print(how=args.print_weights_after_quantization)
+        print_seq_model(qmodel, how=args.print_weights_after_quantization)
 
     with torch.no_grad():
         end = time.time()

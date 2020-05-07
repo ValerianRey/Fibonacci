@@ -1,6 +1,6 @@
 from inq.fib_util import *
 from examples.mnist_models import *
-from examples.print_util import count_out
+from examples.print_util import Color, count_out
 from examples.supported_modules import supported_modules
 import torch
 
@@ -97,6 +97,7 @@ def compute_qmodel(model, stats, num_bits=8, fib=False):
 
     layers = []
     stat_names = []
+    fib_layers = [True, True, True, True, True]  # Do not forget to recompute layer means each time you change that
     i = 0
     for layer in qmodel.seq:
         if type(layer) in supported_modules:
@@ -111,13 +112,13 @@ def compute_qmodel(model, stats, num_bits=8, fib=False):
     qmodel.high_val_input = stats['0'][high_key]
     scale, zp = calc_scale_zero_point(low_val=qmodel.low_val_input, high_val=qmodel.high_val_input, num_bits=num_bits)
 
-    for name, layer in zip(stat_names, layers):
+    for name, layer, fib_layer in zip(stat_names, layers, fib_layers):
         stat = stats[name]
 
         low_val = stat[low_key]
         high_val = stat[high_key]
         q_w, q_b, shift, mult, zp_next, scale_next, zp_w, combined_scale = \
-            compute_quantized_layer(layer, low_val, high_val, scale, num_bits=num_bits, fib=fib)
+            compute_quantized_layer(layer, low_val, high_val, scale, num_bits=num_bits, fib=(fib and fib_layer))
 
         layer.weight.data = q_w
         layer.bias.data = q_b
@@ -137,19 +138,17 @@ def compute_qmodel(model, stats, num_bits=8, fib=False):
             layer.zp_w_kernel = nn.Conv2d(layer.in_channels, 1, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                           dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
             layer.zp_w_kernel.weight.data.fill_(zp_w)
-            layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()  # TODO: clean that
+            layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()
             layer.unbiased_layer = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                              dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
             layer.unbiased_layer.weight.data = layer.weight.data
-            layer.is_fc = False
 
         if type(layer) == nn.Linear:
             layer.zp_w_kernel = nn.Linear(layer.in_features, layer.out_features, bias=False)
             layer.zp_w_kernel.weight.data.fill_(zp_w)
-            layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()  # TODO: clean that
+            layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()
             layer.unbiased_layer = nn.Linear(layer.in_features, layer.out_features, bias=False)
             layer.unbiased_layer.weight.data = layer.weight.data
-            layer.is_fc = True
 
         scale = scale_next
         zp = zp_next
@@ -164,7 +163,7 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
 
     part1 = layer(q_x)
 
-    if layer.is_fc:  # For linear layers only
+    if type(layer) == nn.Linear:  # For linear layers only
         q_x_sum = torch.sum(q_x, dim=1)
         part2 = torch.unsqueeze(q_x_sum * layer.zp_w, dim=1)
     else:
