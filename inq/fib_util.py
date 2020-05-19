@@ -1,10 +1,20 @@
-def binary_int(num, num_bits=8):
+import torch
+import numpy as np
+
+
+def binary_int(num, bits=8):
     code = bin(num)[2:]
-    if len(code) > num_bits:
-        print("ERROR: num needs more bits")
-        return '0' * num_bits
+    if num < 0:
+        print("Clamping " + repr(num) + " to 0")  # TODO: remove this message
+        return '0' * bits
+    elif num >= 2 ** bits:
+        print("Clamping " + repr(num) + " to " + repr(2 ** bits - 1))  # TODO: remove this message
+        return '1' * bits
+    if len(code) > bits:  # Should not happen because of the two conditions above
+        print("ERROR: " + repr(num) + " with bin code " + repr(code) + " needs more than " + repr(bits) + " bits")
+        return '0' * bits
     else:
-        return '0' * (num_bits-len(code)) + code
+        return '0' * (bits - len(code)) + code
 
 
 def int_from_bin(code):
@@ -12,8 +22,8 @@ def int_from_bin(code):
 
 
 # Gives the Fibonacci-valid int number that is the closest (down) to our int number 'num'
-def fib_code_int_down(num, num_bits=8):
-    code = list(binary_int(num, num_bits))
+def fib_code_int_down(num, bits=8):
+    code = list(binary_int(num, bits))
     count = 0
     for i in range(len(code)):
         if code[i] == '1':
@@ -38,8 +48,8 @@ def fib_code_int_down(num, num_bits=8):
 
 
 # Gives the Fibonacci-valid int number that is the closest (up) to our int number 'num'
-def fib_code_int_up(num, num_bits=8):
-    code = list(binary_int(num, num_bits))
+def fib_code_int_up(num, bits=8):
+    code = list(binary_int(num, bits))
     count = 0
     for i in range(len(code)):
         if code[i] == '1':
@@ -71,16 +81,54 @@ def fib_code_int_up(num, num_bits=8):
 
 
 # Gives the best Fibonacci-valid int approximation for 'num'
-def fib_code_int(num, num_bits=8):
-    if num <= 0:
-        return num
-
-    down = fib_code_int_down(num, num_bits)
-    up = fib_code_int_up(num, num_bits)
+def fib_code_int(num, bits=8):
+    # If num is outside of {0, ..., 2 ** bits - 1} then it is clamped by binary_int in fib_code_int_down/up, so we do not need to handle that here
+    down = fib_code_int_down(num, bits)
+    up = fib_code_int_up(num, bits)
     dist_down = abs(num - down)
     dist_up = abs(num - up)
     if dist_down < dist_up:
         return down
     else:
         return up
+
+
+def is_fib(num, bits=8):
+    last_one = False
+    for bit in binary_int(num, bits):
+        if bit == '1':
+            if last_one:
+                return False
+            last_one = True
+        else:
+            last_one = False
+    return True
+
+
+# Returns a tensor of the same shape as x with a 1 at each fib number and a 0 at each non-fib number
+def is_fib_tensor(x, bits=8):
+    return torch.zeros_like(x).copy_(x).detach().int().cpu().apply_(lambda num: is_fib(num, bits))
+
+
+def proportion_fib(x, bits=8):
+    return (is_fib_tensor(x, bits).sum() / np.prod(x.shape)).item()
+
+
+def fib_distances(x, bits=8):
+    x_fib = x.int().cpu().apply_(lambda y: fib_code_int(y, bits=bits)).float().cuda()
+    distances = torch.abs(x - x_fib)
+    return x_fib, distances
+
+
+def fib_quantize_tensor(q_tensor, proportion, bits=8):
+    # print(Color.RED + repr(q_tensor) + Color.END)
+    q_tensor_fib, distances = fib_distances(q_tensor, bits)
+    quantile = np.quantile(distances.cpu().numpy(), proportion)
+    # print("Quantile = " + repr(quantile))
+    q_tensor = torch.where(distances <= quantile, q_tensor_fib, q_tensor)
+    ones = torch.ones_like(q_tensor)
+    zeros = torch.zeros_like(q_tensor)
+    Ts = torch.where(distances <= quantile, zeros, ones)
+    # print(Color.BLUE + repr(q_tensor) + Color.END)
+    return q_tensor, Ts
 

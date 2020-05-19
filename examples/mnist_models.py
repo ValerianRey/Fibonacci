@@ -1,8 +1,6 @@
 from __future__ import print_function
 import torch.nn as nn
 
-n_iter = 0
-
 
 class Net(nn.Module):
     def __init__(self, non_linearity=nn.ReLU):

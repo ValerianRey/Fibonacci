@@ -187,10 +187,10 @@
 # x = x - layer.zp
 # All int computation
 # x = (((layer.mult * layer(x).int()) / (2 ** layer.shift)) + layer.zp_next).float()
-# x = ((layer.mult * layer(x).int()) // (2 ** layer.shift)).float()  # TODO: verify that this is not wrong (compared to line above + keeping zp_next)
+# x = ((layer.mult * layer(x).int()) // (2 ** layer.shift)).float()
 
 # l_x = layer(x).int() + (layer.zp_w * x.sum(axis=3)).int()
-# x = ((layer.mult * l_x) // (2 ** layer.shift)).float()  # TODO: verify that this is not wrong (compared to line above + keeping zp_next)
+# x = ((layer.mult * l_x) // (2 ** layer.shift)).float()
 
 # l_x = layer(x) - layer.zp_w_kernel(x)
 
@@ -220,12 +220,10 @@
 #     qmin, qmax = calc_qmin_qmax(num_bits=num_bits, fib=fib)
 #     scale = (high_val - low_val) / (qmax - qmin)
 #
-#     # TODO: should we clamp the zero_point to [qmin, qmax]?
 #     zp = int((qmin - low_val / scale).round())
 #     return scale, zp  # zero_point needs to be int
 #
 #
-# # TODO: change that so that it takes as parameters qmin and qmax instead of numbers of bits
 # def get_mult_shift(val, num_mult_bits=8, num_shift_bits=32):
 #     best_mult = 1
 #     best_shift = 0
@@ -260,7 +258,7 @@
 #     combined_scale = scale_x.item() * scale_w.item() / scale_next.item()
 #
 #     if fib:
-#         best_mult, best_shift = get_mult_shift(combined_scale, num_bits-1, ACC_BITS)  # TODO: make that properly
+#         best_mult, best_shift = get_mult_shift(combined_scale, num_bits-1, ACC_BITS)
 #     else:
 #         best_mult, best_shift = get_mult_shift(combined_scale, num_bits, ACC_BITS)
 #
@@ -298,7 +296,7 @@
 #             if len(layers) > 0:  # there is a shift of 1 in the name: for layer conv1 we use stats['conv2'] for example for the original MNIST net.
 #                 stat_names.append(name)
 #             layers.append(layer)
-#     # stat_names.append(stat_names[-1])  # we use the stats of the last layer twice TODO: check which one to use
+#     # stat_names.append(stat_names[-1])  # we use the stats of the last layer twice
 #     stat_names.append('out')
 #
 #     for name, layer in zip(stat_names, layers):
@@ -322,19 +320,19 @@
 #             layer.zp_w_kernel = nn.Conv2d(layer.in_channels, 1, layer.kernel_size, stride=layer.stride, padding=layer.padding,
 #                                           dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
 #             layer.zp_w_kernel.weight.data.fill_(zp_w)
-#             layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()  # TODO: clean that
+#             layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()
 #             layer.unbiased_layer = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
 #                                              dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
 #             layer.unbiased_layer.weight.data = layer.weight.data
-#             layer.sum_dim = 2  # TODO: make that generic
+#             layer.sum_dim = 2
 #
 #         if type(layer) == nn.Linear:
 #             layer.zp_w_kernel = nn.Linear(layer.in_features, layer.out_features, bias=False)
 #             layer.zp_w_kernel.weight.data.fill_(zp_w)
-#             layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()  # TODO: clean that
+#             layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()
 #             layer.unbiased_layer = nn.Linear(layer.in_features, layer.out_features, bias=False)
 #             layer.unbiased_layer.weight.data = layer.weight.data
-#             layer.sum_dim = 1  # TODO: make that generic
+#             layer.sum_dim = 1
 #
 #         scale = scale_next
 #         zp = zp_next
@@ -376,7 +374,7 @@
 #
 #     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
 #     output = ((layer.mult * result.int()) >> layer.shift).float() + layer.zp_next
-#     # output = result.int() * layer.combined_scale + layer.zp_next  # just to test, TODO: remove that
+#     # output = result.int() * layer.combined_scale + layer.zp_next  # just to test
 #
 #     if log:
 #         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
@@ -388,7 +386,6 @@
 #
 #     input_qmin, input_qmax = calc_qmin_qmax(num_bits)
 #
-#     # TODO: choose which one to use
 #     # The first line ensures that all x are quantized with the same scale / zp
 #     # The second line uses batch quantization
 #     # Accuracies seem to be the same
@@ -429,7 +426,7 @@
 #     return x
 #
 #
-# # For now this works only on the baseline network (not generic) TODO: make that generic
+# # For now this works only on the baseline network (not generic)
 # def enhance_qmodel(qmodel, layers_means):
 #     qmodel.conv1.part3 = layers_means[0]['part3']
 #     qmodel.conv1.part4 = layers_means[0]['part4']
@@ -446,7 +443,7 @@
 #     return qmodel  # Works in place but still returns qmodel
 
 """Old enhance qmodel"""
-# For now this works only on the baseline network (not generic) TODO: make that generic
+# For now this works only on the baseline network (not generic)
 # def enhance_qmodel(qmodel, layers_means):
 #     qmodel.conv1.part3 = layers_means[0]['part3']
 #     qmodel.conv1.part4 = layers_means[0]['part4']

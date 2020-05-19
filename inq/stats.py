@@ -32,8 +32,6 @@ def gather_activation_stats(model, x, stats):
             i += 1
         x = layer(x)
 
-    update_stats(x, stats, 'out')  # Useless stat, TODO: remove that
-
 
 # Entry function to get stats of all functions.
 def gather_stats(model, loader):
@@ -55,10 +53,10 @@ def gather_stats(model, loader):
         print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=True)
     final_stats = {}
     for key, value in stats.items():
-        final_stats[key] = {"avg_max": value["max_sum"] / value["samples"], "avg_min": value["min_sum"] / value["samples"],
-                            "max": value["max"], "min": value["min"]}
+        final_stats[key] = {"avg_max": (value["max_sum"] / value["samples"]).item(), "avg_min": (value["min_sum"] / value["samples"]).item(),
+                            "max": value["max"].item(), "min": value["min"].item()}
 
-    print("Gathering completed")
+    # print("Gathering completed")
     return final_stats
 
 
@@ -71,7 +69,7 @@ def load_or_gather_stats(model, train_stats_loader, load, saves_path):
 
     else:
         stats = gather_stats(model, train_stats_loader)
-        print("Saving stats for later use (if same quantization scheme)")
+        # print("Saving stats for later use (if same quantization scheme)")
         with open(stats_path, 'wb') as handle:
             pickle.dump(stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -79,7 +77,7 @@ def load_or_gather_stats(model, train_stats_loader, load, saves_path):
 
 
 def gather_qmodel_part_means(qmodel, data, args, layers_stats):
-    qmodel_forward(qmodel, data, num_bits=args.weight_bits, layers_stats=layers_stats)
+    qmodel_forward(qmodel, data, bits=args.weight_bits, layers_stats=layers_stats)
 
 
 def gather_qmodel_means(qmodel, args, loader):
@@ -110,22 +108,21 @@ def gather_qmodel_means(qmodel, args, loader):
     for i in range(len(layers_stats)):
         final_means[i]['part3'] = torch.mean(torch.cat(layers_stats[i]['part3']), dim=0)
         final_means[i]['part4'] = torch.mean(torch.cat(layers_stats[i]['part4']), dim=0)
-    print("Gathering completed")
 
     return final_means
 
 
-def load_or_gather_layers_means(qmodel, args, train_stats_loader, load, fibonacci_encode):
+def load_or_gather_layers_means(qmodel, args, train_stats_loader, load, fib):
     means_path = 'saves/' + args.dataset + '/' + args.arch + '/means_'
     if load:
         print("Loading layers_means from save, be sure to remove this when the quantization scheme changes")
-        fib_str = 'fib' if fibonacci_encode else 'nofib'
+        fib_str = 'fib' if fib else 'nofib'
         with open(means_path + fib_str + '.pkl', 'rb') as handle:
             layers_means = pickle.load(handle)
     else:
         layers_means = gather_qmodel_means(qmodel, args, train_stats_loader)
-        print("Saving layers_means for later use (if same quantization scheme)")
-        fib_str = 'fib' if fibonacci_encode else 'nofib'
+        # print("Gathering completed, saving layers means")
+        fib_str = 'fib' if fib else 'nofib'
         with open(means_path + fib_str + '.pkl', 'wb') as handle:
             pickle.dump(layers_means, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
