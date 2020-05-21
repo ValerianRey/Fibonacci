@@ -26,29 +26,30 @@ from os import path
 import inq
 
 settings_dict = {
-    'dataset': 'cifar10',  # 'mnist', 'cifar10'
-    'arch': 'LeNet',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
+    'dataset': 'mnist',  # 'mnist', 'cifar10'
+    'arch': 'Net_2',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
     'workers': 8,  # Increasing that seems to require A LOT of RAM memory (default was 8)
     'epochs': 10,
-    'retrain_epochs': 4,
+    'retrain_epochs': 5,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 128,  # default was 256
     'val_batch_size': 4096,  # Keep that low to have enough GPU memory for scaling validation
     'stats_batch_size': 1000,  # This should be a divider of the dataset size
     'lr': 0.1,  # Learning rate, default was 0.001
-    'lr_retrain': 0.02,
+    'lr_retrain': 0.05,
     'gamma': 0.9,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7, 0.95 for cifar10 is good
     'gamma_retrain': 0.5,
     'momentum': 0.9,  # Gradient momentum, default was 0.9
-    'momentum_retrain': 0.,
+    'momentum_retrain': 0.5,
     'weight_decay': 0.0005,  # L2 regularization parameter, default was 0.0005
     'weight_decay_retrain': 0.0005,
     'print_interval': 1,
-    'val_interval': 1,  # Use a large value if you want to avoid wasting time computing the test accuracy and printing it.
+    'val_interval': 4,  # Use a large value if you want to avoid wasting time computing the test accuracy and printing it.
     'seed': None,  # default: None
     'quantize': True,
+    'strategy': 'random',
     'weight_bits': 8,
-    'iterative_steps': [0.5, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],  # ,  # at the last step we still need to retrain parameters that are not quantized (like the biases)
+    'iterative_steps': [0.3, 0.5, 0.7, 0.9, 0.95, 0.99, 1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
     'log_dir': "logs/",
     'tensorboard': False,
     'load_model': True,
@@ -137,6 +138,8 @@ def main_worker(args, shuffle=True):
 
     train_stats_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.stats_batch_size, shuffle=shuffle,
                                                      num_workers=args.workers, pin_memory=True)
+    dummy_datapoint, _ = train_dataset[0]
+    dummy_batch = dummy_datapoint.unsqueeze(0)
 
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.val_batch_size, shuffle=shuffle,
                                              num_workers=args.workers, pin_memory=True)
@@ -172,13 +175,12 @@ def main_worker(args, shuffle=True):
         }, filename=model_path)
 
     stats = load_or_gather_stats(model, train_stats_loader, args.load_stats, saves_path)
-
     if args.load_qmodel_fib:
         if os.path.isfile(qmodel_fib_path):
             # Here we compute the qmodel from
-            print("Computing qmodel from model to be able to copy the save into it (need to improve that)")
-            qmodel_fib = compute_qmodel(model, stats, optimizer, bits=args.weight_bits, fib=True, proportion=1.0)
-            layers_means = load_or_gather_layers_means(qmodel_fib, args, train_stats_loader, load=args.load_layers_means, fib=True)
+            print("Computing qmodel from model to be able to copy the save into it")  # TODO: need to improve on that by defining a constructor for empty qmodel
+            qmodel_fib = compute_qmodel(model, stats, optimizer, proportions=args.iterative_steps, step=0, bits=args.weight_bits, fib=True, strategy=args.strategy)
+            layers_means = load_or_gather_layers_means(qmodel_fib, args, dummy_batch, load=args.load_layers_means, fib=True)
             qmodel_fib = enhance_qmodel(qmodel_fib, layers_means)
             print("Loading checkpoint '{}'".format(qmodel_fib_path))
             checkpoint = torch.load(qmodel_fib_path)
@@ -199,26 +201,22 @@ def main_worker(args, shuffle=True):
             print_header(color=Color.UNDERLINE)
             if qepoch == 0:  # The int quantized qmodel is only produced once
                 qmodel_int = compute_qmodel(model, stats, optimizer, bits=args.weight_bits, fib=False)
-                layers_means = load_or_gather_layers_means(qmodel_int, args, train_stats_loader, load=args.load_layers_means, fib=False)
+                layers_means = load_or_gather_layers_means(qmodel_int, args, dummy_batch, load=args.load_layers_means, fib=False)
                 qmodel_int = enhance_qmodel(qmodel_int, layers_means)
                 validate(val_loader, qmodel_int, criterion, args, quantized=True, fib=False, title='Test int')
-                qmodel_fib = compute_qmodel(model, stats, optimizer, bits=args.weight_bits, fib=True, proportion=args.iterative_steps[qepoch])
+                qmodel_fib = compute_qmodel(model, stats, optimizer, proportions=args.iterative_steps, step=0, bits=args.weight_bits, fib=True, strategy=args.strategy)
             else:
-                increase_fib_proportion(qmodel_fib, optimizer, args.weight_bits, args.iterative_steps[qepoch])
-                # print("Testing model with increased number of fib and wrong layer means")
-                # validate(val_loader, qmodel_fib, criterion, args, quantized=True, fibonacci_encoded=True)
+                increase_fib_proportion(qmodel_fib, optimizer, args.weight_bits, args.iterative_steps, qepoch, strategy=args.strategy)
 
-            layers_means = load_or_gather_layers_means(qmodel_fib, args, train_stats_loader, load=args.load_layers_means, fib=True)
+            layers_means = load_or_gather_layers_means(qmodel_fib, args, dummy_batch, load=args.load_layers_means, fib=True)
             qmodel_fib = enhance_qmodel(qmodel_fib, layers_means)
-            title = 'Test ' + '{0:5f}'.format(args.iterative_steps[qepoch] * 100).rstrip('0').rstrip('.') + '% fib'
+            title = 'Test ' + '{0:.5f}'.format(args.iterative_steps[qepoch] * 100).rstrip('0').rstrip('.') + '% fib'
             validate(val_loader, qmodel_fib, criterion, args, quantized=True, fib=True, title=title)
 
             # Plug the fib quantized values inside of the original model
             update_model(model, qmodel_fib)
-            # validate(val_loader, model, criterion, args)  # Testing the fib network scaled back to original (does not clamp input so the accuracy can be a lot better)
-
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma_retrain)
-
+            optimizer.reset_momentum()
             for epoch in range(args.start_epoch, args.retrain_epochs):
                 # train for one epoch
                 train(train_loader, model, criterion, optimizer, epoch, args, retrain=True)
@@ -228,10 +226,15 @@ def main_worker(args, shuffle=True):
                     validate(val_loader, model, criterion, args, title='Test unscaled')
 
             update_qmodel(qmodel_fib, model)
-            layers_means = load_or_gather_layers_means(qmodel_fib, args, train_stats_loader, load=args.load_layers_means, fib=True)
+            layers_means = load_or_gather_layers_means(qmodel_fib, args, dummy_batch, load=args.load_layers_means, fib=True)
             qmodel_fib = enhance_qmodel(qmodel_fib, layers_means)
             title = title + ' retrained'
             validate(val_loader, qmodel_fib, criterion, args, quantized=True, fib=True, title=title)
+            print_fib_info(average_proportion_fib(qmodel_fib, weighted=True),
+                           average_proportion_fib(qmodel_fib, weighted=False),
+                           average_distance_fib(qmodel_fib, weighted=True),
+                           average_distance_fib(qmodel_fib, weighted=False))
+            # print_seq_model(qmodel_fib, how='short')
 
         save_checkpoint({
             'state_dict': qmodel_fib.state_dict(),

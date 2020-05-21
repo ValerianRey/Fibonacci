@@ -124,3 +124,7 @@ class SGD(Optimizer):
                 p.data.add_(-group['lr'], d_p)
 
         return loss
+
+    # Resets the optimizer without resetting the Ts
+    def reset_momentum(self):
+        self.load_state_dict({'state': {}, 'param_groups': self.state_dict()['param_groups']})

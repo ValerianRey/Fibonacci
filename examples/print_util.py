@@ -1,7 +1,6 @@
-import torch
 from examples.supported_modules import supported_modules
-import numpy as np
 from inq.fib_util import *
+
 
 class Color:
     PURPLE = '\033[95m'
@@ -29,7 +28,7 @@ def print_train(epoch, total_epochs, batch_idx, num_batches, batch_time, loss, t
           '{batch_time.sum:.0f}s'.format(batch_time=batch_time).ljust(7) +
           '{loss.avg:.4f}'.format(loss=loss).ljust(15) +
           '{top1.avg:.3f}'.format(top1=top1).ljust(12) +
-          '{0:5f}'.format(lr).rstrip('0').rstrip('.').ljust(8) + Color.END,
+          '{0:.5f}'.format(lr).rstrip('0').rstrip('.').ljust(8) + Color.END,
           end='\n' if persistent else '')
 
 
@@ -58,18 +57,17 @@ def print_layer(name, layer, print_data=False):
     if print_data:
         print(data_color + repr(biases) + Color.END)
 
-    if layer.zp_x is None:  # TODO: do that properly
-        print(title_color + name + " quantization data: " + "None" + Color.END)
-    else:
-        percentage_fib = proportion_fib(layer.weight, 8) * 100  # TODO: dont hardcode the 8
-        _, distances = fib_distances(layer.weight, 8)
-        avg_fib_dist = distances.mean()
-        print(title_color + name + " quantization data: " + "shift=" + repr(layer.shift)
-              + ", mult=" + repr(layer.mult) + ", zp_x=" + repr(layer.zp_x)
-              + ", zp_x_next=" + repr(layer.zp_x_next) + ", {0:.1f}% of Fibonacci encoded weights".format(percentage_fib)
-              + ", Average fib distance: {0:.2f}".format(avg_fib_dist) + Color.END)
-
     print()
+
+
+def print_quantization_params(name, layer, bits=8):
+    percentage_fib = proportion_fib(layer.weight, bits) * 100
+    _, distances = fib_distances(layer.weight, bits)
+    avg_fib_dist = distances.mean()
+    print(name + " quantization data: " + "bits=" + repr(bits) + ", shift=" + repr(layer.shift)
+          + ", mult=" + repr(layer.mult) + ", zp_x=" + repr(layer.zp_x)
+          + ", zp_x_next=" + repr(layer.zp_x_next) + ", {0:.1f}% of Fibonacci encoded weights".format(percentage_fib)
+          + ", Average fib distance: {0:.2f}".format(avg_fib_dist) + Color.END)
 
 
 def print_seq_model(model, how='long'):
@@ -90,6 +88,8 @@ def print_seq_model(model, how='long'):
 
     for name, layer in zip(names_to_print, layers_to_print):
         print_layer(name, layer, print_data=print_data)
+        if 'bits' in model.state_dict().keys():
+            print_quantization_params(name, layer, bits=model.bits.item())
 
 
 def print_gather(title, batch_idx, num_batches, elapsed_time, color='', persistent=False, ):
@@ -133,3 +133,13 @@ def print_quantization_epoch(qepoch, max_epoch, percent):
     print("Quantization epoch " + Color.BOLD + Color.GREEN + repr(qepoch + 1) + "/" + repr(max_epoch) + Color.END
           + " - Will quantize " + Color.BOLD + Color.GREEN + "{0:.5f}".format(percent).rstrip('0').rstrip('.') + '%' + Color.END + " of the weights as fibonacci")
 
+
+def print_fib_info(weighted_proportion, unweighted_proportion, weighted_distance, unweighted_distance):
+    print("Proportion of fib weights: " +
+          '{0:.2f}'.format(weighted_proportion * 100).rstrip('0').rstrip('.') + '%')
+    print("Average proportion of fib weights over equally important layers: " +
+          '{0:.2f}'.format(unweighted_proportion * 100).rstrip('0').rstrip('.') + '%')
+    print("Average distance to fib weights: " +
+          '{0:.3f}'.format(weighted_distance).rstrip('0').rstrip('.'))
+    print("Average average distance to fib weights over equally important layers: " +
+          '{0:.3f}'.format(unweighted_distance).rstrip('0').rstrip('.'))

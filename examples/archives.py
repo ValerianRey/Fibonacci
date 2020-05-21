@@ -497,3 +497,26 @@
 #         return x
 
 
+"""Old gather_layers_means"""
+# def gather_qmodel_means(qmodel, args, loader):
+#     device = 'cuda:0'
+#     qmodel.eval()
+#
+#     title = 'Gathering layers means'
+#     color = ''
+#
+#     layers_stats = []
+#     final_means = []
+#     for layer in qmodel.seq:
+#         if type(layer) in supported_modules:
+#             layers_stats.append({'part3': [], 'part4': []})
+#             final_means.append({})
+#
+#     start_time = time.clock()
+#     with torch.no_grad():
+#         for batch_idx, (data, _) in enumerate(loader):
+#             elapsed_time = time.clock() - start_time
+#             print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=False)
+#             data = data.to(device)
+#             gather_qmodel_part_means(qmodel, data, args, layers_stats)
+#         print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=True)

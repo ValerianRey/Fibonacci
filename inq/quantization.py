@@ -65,7 +65,7 @@ def dequantize_tensor(q_x, scale, zp):
     return scale * (q_x.float() - zp)
 
 
-def compute_quantized_layer(layer, scale_x, scale_x_next, bits=8, fib=False, proportion=1.):
+def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step=None, bits=8, fib=False, strategy='quantile'):
     low_val_w, high_val_w = layer.weight.data.min().item(), layer.weight.data.max().item()
     scale_w, zp_w = calc_scale_zero_point(low_val_w, high_val_w, bits=bits, fib=fib)
     q_w = quantize_tensor(layer.weight.data, scale_w, zp_w)
@@ -79,14 +79,14 @@ def compute_quantized_layer(layer, scale_x, scale_x_next, bits=8, fib=False, pro
 
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
     if fib:
-        q_w, Ts = fib_quantize_tensor(q_w, proportion, bits=bits)
+        q_w, Ts = fib_quantize_tensor(q_w, proportions, step, bits=bits, strategy=strategy)
     else:
         Ts = torch.ones_like(q_w)
 
     return q_w, q_b, best_shift, best_mult, zp_w, scale_w, scale_x, combined_scale, Ts
 
 
-def compute_qmodel(model, stats, optimizer, bits=8, fib=False, proportion=1.):
+def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8, fib=False, strategy='quantile'):
     # Copy the model into qmodel (and its device)
     qmodel = copy.deepcopy(model)
 
@@ -126,6 +126,7 @@ def compute_qmodel(model, stats, optimizer, bits=8, fib=False, proportion=1.):
         stat_names.append('none')  # Dummy stat name to indicate that we are at the last layer and we do not actually need the stat
 
         # Initialization
+        qmodel.register_parameter('bits', nn.Parameter(torch.tensor(bits), requires_grad=False))
         qmodel.register_parameter('low_val_input', nn.Parameter(torch.tensor(stats['0'][low_key]), requires_grad=False))
         qmodel.register_parameter('high_val_input', nn.Parameter(torch.tensor(stats['0'][high_key]), requires_grad=False))
         scale_x, zp_x = calc_scale_zero_point(low_val=qmodel.low_val_input.item(), high_val=qmodel.high_val_input.item(), bits=bits)
@@ -138,7 +139,7 @@ def compute_qmodel(model, stats, optimizer, bits=8, fib=False, proportion=1.):
             else:
                 scale_x_next, zp_x_next = calc_scale_zero_point(low_val=stats[name][low_key], high_val=stats[name][high_key], bits=bits, fib=False)
             q_w, q_b, shift, mult, zp_w, scale_w, scale_x, combined_scale, Ts = \
-                compute_quantized_layer(layer, scale_x, scale_x_next, bits=bits, fib=fib, proportion=proportion)  # fib=(fib and fib_layer)
+                compute_quantized_layer(layer, scale_x, scale_x_next, proportions=proportions, step=step, bits=bits, fib=fib, strategy=strategy)  # fib=(fib and fib_layer)
             optimizer.param_groups[0]['Ts'][idx] = Ts
 
             layer.weight.data = q_w
@@ -210,14 +211,17 @@ def update_qmodel(qmodel, model):
                     p.requires_grad = False
 
 
-def increase_fib_proportion(qmodel, optimizer, bits, proportion):
+def increase_fib_proportion(qmodel, optimizer, bits, proportions, step, strategy='quantile'):
     with torch.no_grad():
         idx = 0
         for layer in qmodel.seq:
             if type(layer) in supported_modules:
                 for name, param in layer.named_parameters():
                     if name == 'weight':
-                        param.data, optimizer.param_groups[0]['Ts'][idx] = fib_quantize_tensor(param.data, proportion, bits=bits)
+                        param.data, new_Ts = fib_quantize_tensor(param.data, proportions, step, bits=bits, strategy=strategy)
+                        # Multiply element-wise the old Ts and the new Ts such that we always keep at 0 the Ts that already were 0
+                        optimizer.param_groups[0]['Ts'][idx] = torch.mul(optimizer.param_groups[0]['Ts'][idx], new_Ts)
+                        # print(optimizer.param_groups[0]['Ts'][idx].sum() / np.prod(optimizer.param_groups[0]['Ts'][idx].shape))
                     if name == 'weight' or name == 'bias':
                         idx += 1
                 layer.unbiased_layer.weight.data = layer.weight.data
@@ -304,13 +308,43 @@ def enhance_qmodel(qmodel, layers_means):
     i = 0
     for layer in qmodel.seq:  # Only iterate over the main modules and not the modules contained in those
         if type(layer) in supported_modules:
-            # layer.part3 = layers_means[i]['part3']
             layer.register_parameter('part3', torch.nn.Parameter(layers_means[i]['part3'], requires_grad=False))
-            # layer.part4 = layers_means[i]['part4']
             layer.register_parameter('part4', torch.nn.Parameter(layers_means[i]['part4'], requires_grad=False))
             i += 1
 
     return qmodel  # Works in place but still returns qmodel
 
 
+# This function returns the proportion of fib weights in a given qmodel, averaged over the layers
+# The idea of using weighted=False is that all layers are equally important no matter how many weights they have
+# Weighted=True gives the true proportion of fib weights in the qmodel
+def average_proportion_fib(qmodel, weighted=False):
+    bits = qmodel.bits.item()
+    proportions = []
+    weights = []
+    for layer in qmodel.seq:
+        if type(layer) in supported_modules:
+            n = np.prod(layer.weight.shape) if weighted else 1
+            proportions.append(proportion_fib(layer.weight, bits=bits) * n)
+            weights.append(n)
+
+    return sum(proportions) / sum(weights)
+
+
+# This function returns the average distance to fib weights in a given qmodel, averaged over the layers
+# The idea of using weighted=False is that all layers are equally important no matter how many weights they have
+# Weighted=True gives the true average distance to fib weights in the qmodel
+def average_distance_fib(qmodel, weighted=False):
+    bits = qmodel.bits.item()
+    avg_distances = []
+    weights = []
+    for layer in qmodel.seq:
+        if type(layer) in supported_modules:
+            _, distances = fib_distances(layer.weight, bits)
+            avg_fib_dist = distances.mean().item()
+            n = np.prod(layer.weight.shape) if weighted else 1
+            avg_distances.append(avg_fib_dist * n)
+            weights.append(n)
+
+    return sum(avg_distances) / sum(weights)
 

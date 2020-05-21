@@ -80,12 +80,8 @@ def gather_qmodel_part_means(qmodel, data, args, layers_stats):
     qmodel_forward(qmodel, data, bits=args.weight_bits, layers_stats=layers_stats)
 
 
-def gather_qmodel_means(qmodel, args, loader):
-    device = 'cuda:0'
+def gather_qmodel_means(qmodel, args, batch_data):
     qmodel.eval()
-
-    title = 'Gathering layers means'
-    color = ''
 
     layers_stats = []
     final_means = []
@@ -94,25 +90,17 @@ def gather_qmodel_means(qmodel, args, loader):
             layers_stats.append({'part3': [], 'part4': []})
             final_means.append({})
 
-    start_time = time.clock()
     with torch.no_grad():
-        for batch_idx, (data, _) in enumerate(loader):
-            elapsed_time = time.clock() - start_time
-            print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=False)
-            data = data.to(device)
-            gather_qmodel_part_means(qmodel, data, args, layers_stats)
-        print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=True)
+        batch_data = batch_data.to('cuda')
+        gather_qmodel_part_means(qmodel, batch_data, args, layers_stats)
 
-    # Be careful, all the elements of layers_stats[i]['partj'] have the same weight in the mean, but some of them are the averages over a smaller batch (the last batch)
-    # If the loader has a batch size that divides the set total number of samples we don't have this problem
     for i in range(len(layers_stats)):
         final_means[i]['part3'] = torch.mean(torch.cat(layers_stats[i]['part3']), dim=0)
         final_means[i]['part4'] = torch.mean(torch.cat(layers_stats[i]['part4']), dim=0)
-
     return final_means
 
 
-def load_or_gather_layers_means(qmodel, args, train_stats_loader, load, fib):
+def load_or_gather_layers_means(qmodel, args, batch_data, load, fib):
     means_path = 'saves/' + args.dataset + '/' + args.arch + '/means_'
     if load:
         print("Loading layers_means from save, be sure to remove this when the quantization scheme changes")
@@ -120,7 +108,7 @@ def load_or_gather_layers_means(qmodel, args, train_stats_loader, load, fib):
         with open(means_path + fib_str + '.pkl', 'rb') as handle:
             layers_means = pickle.load(handle)
     else:
-        layers_means = gather_qmodel_means(qmodel, args, train_stats_loader)
+        layers_means = gather_qmodel_means(qmodel, args, batch_data)
         # print("Gathering completed, saving layers means")
         fib_str = 'fib' if fib else 'nofib'
         with open(means_path + fib_str + '.pkl', 'wb') as handle:
