@@ -116,9 +116,6 @@ def main_worker(args, shuffle=True):
 
     cudnn.benchmark = True
 
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma)
-    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[75, 150], gamma=args.gamma)
-
     if args.dataset == 'mnist':
         transform = transforms.Compose([
                            transforms.ToTensor(),
@@ -158,6 +155,8 @@ def main_worker(args, shuffle=True):
         else:
             print(Color.RED + "No checkpoint found at '{}'".format(model_path) + Color.END)
     if args.pretrain:
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma)
+        # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[75, 150], gamma=args.gamma)
         print_header(color=Color.UNDERLINE)
         for epoch in range(args.start_epoch, args.epochs):
             # train for one epoch
