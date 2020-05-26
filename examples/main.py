@@ -29,15 +29,15 @@ settings_dict = {
     'dataset': 'cifar10',  # 'mnist', 'cifar10'
     'arch': 'PARN18_nores',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
     'workers': 8,  # Increasing that seems to require A LOT of RAM memory (default was 8)
-    'epochs': 250,
+    'epochs': 2,
     'retrain_epochs': 5,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
     'val_batch_size': 256,  # Keep that low to have enough GPU memory for scaling validation
     'stats_batch_size': 1000,  # This should be a divider of the dataset size
-    'lr': 0.1,  # Learning rate, default was 0.001
+    'lr': 0.05,  # Learning rate, default was 0.001
     'lr_retrain': 0.05,
-    'gamma': 0.99,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7, 0.95 for cifar10 is good
+    'gamma': 0.92,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7, 0.95 for cifar10 is good
     'gamma_retrain': 0.5,
     'momentum': 0.9,  # Gradient momentum, default was 0.9
     'momentum_retrain': 0.5,
@@ -168,7 +168,8 @@ def main_worker(args, shuffle=True):
 
         # Create the directory if it does not exist yet, and then save the learned model
         if not path.exists(saves_path):
-            os.mkdir(saves_path)
+            os.makedirs(saves_path)
+
         save_checkpoint({
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
@@ -195,6 +196,9 @@ def main_worker(args, shuffle=True):
     else:
         optimizer = inq.SGD(model.parameters(), args.lr_retrain, momentum=args.momentum_retrain, weight_decay=args.weight_decay_retrain, weight_bits=args.weight_bits)
         quantization_epochs = len(args.iterative_steps)
+
+
+
         for qepoch in range(quantization_epochs):
             print()
             print_quantization_epoch(qepoch, quantization_epochs, args.iterative_steps[qepoch] * 100)

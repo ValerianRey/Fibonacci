@@ -105,14 +105,11 @@ def load_or_gather_layers_means(qmodel, args, batch_data, load, fib):
     if load:
         print("Loading layers_means from save, be sure to remove this when the quantization scheme changes")
         fib_str = 'fib' if fib else 'nofib'
-        with open(means_path + fib_str + '.pkl', 'rb') as handle:
-            layers_means = pickle.load(handle)
+        layers_means = torch.load(means_path + fib_str + '.pth')
     else:
         layers_means = gather_qmodel_means(qmodel, args, batch_data)
-        # print("Gathering completed, saving layers means")
         fib_str = 'fib' if fib else 'nofib'
-        with open(means_path + fib_str + '.pkl', 'wb') as handle:
-            pickle.dump(layers_means, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        torch.save(layers_means, means_path + fib_str + '.pth')
 
     return layers_means
 

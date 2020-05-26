@@ -109,7 +109,7 @@ def is_fib_tensor(x, bits=8):
 
 def proportion_fib(x, bits=8):
     with torch.no_grad():
-        return (is_fib_tensor(x, bits).sum() / np.prod(x.shape)).item()
+        return (is_fib_tensor(x, bits).sum().true_divide(np.prod(x.shape))).item()
 
 
 def fib_distances(x, bits=8):
