@@ -20,7 +20,7 @@ def calc_qmin_qmax(bits=8, negative=False, fib=False):
     if fib:
         qmin = 0
         qmax = (qmax + fib_code_int_down(qmax, bits=bits)) // 2  # We do that to not induce a bias by the choice of qmax
-    return qmin, qmax
+    return torch.tensor(qmin, device='cuda'), torch.tensor(qmax, device='cuda')
 
 
 def calc_scale_zero_point(low_val, high_val, bits=8, fib=False):
@@ -30,7 +30,8 @@ def calc_scale_zero_point(low_val, high_val, bits=8, fib=False):
         scale = 1
     else:
         scale = (high_val - low_val) / (qmax - qmin)
-    zp = round((qmin - low_val / scale))
+
+    zp = torch.round((qmin - low_val / scale))
     # The need to clamp zp depends on how we handle it. For example in a linear layer zp_w is only multiplied once, so it depends on what
     # piece of hardware we use to make that multiplication (is it important to have it on uint8, or is int32 ok, or even float32?)
     # For a conv layer, more multiplications of zp_w are required, so it might be interesting in the future to fibonacci encode the zp_w_kernel
@@ -44,6 +45,18 @@ def calc_scale_zero_point(low_val, high_val, bits=8, fib=False):
         print(Color.RED + 'zp more than qmax' + Color.END)
         zp = qmax
     return scale, zp  # zero_point needs to be int
+
+
+def calc_scales_zero_points(low_vals, high_vals, bits=8, fib=False):
+    scales = torch.ones_like(low_vals)
+    zps = torch.zeros_like(low_vals)
+
+    for i, (low_val, high_val) in enumerate(zip(low_vals, high_vals)):
+        scale, zp = calc_scale_zero_point(low_val, high_val, bits=bits, fib=fib)
+        scales[i] = scale
+        zps[i] = zp
+
+    return scales, zps
 
 
 # Can be very long to compute for high number of bits
@@ -61,14 +74,13 @@ def get_mult_shift_old(val, mult_bits=8, shift_bits=32):
     return best_mult, best_shift
 
 
-# Can be very long to compute for high number of bits
 def get_mult_shift(val, mult_bits=8, shift_bits=32):
     best_mult = 1
     best_shift = 0
     best_diff = abs(val - best_mult)
     for shift in range(shift_bits):
         s_val = val * (2 ** shift)
-        mult = min(max(round(s_val), 1), 2 ** mult_bits - 1)
+        mult = min(max(torch.round(s_val), torch.tensor(1)), 2 ** mult_bits - 1)
         if abs(s_val - mult) < best_diff:
             best_diff = abs(s_val - mult)
             best_mult = mult
@@ -76,25 +88,85 @@ def get_mult_shift(val, mult_bits=8, shift_bits=32):
     return best_mult, best_shift
 
 
+def get_mults_shifts(vals, mult_bits=8, shift_bits=32):
+    best_mults = torch.ones_like(vals)
+    best_shifts = torch.zeros_like(vals)
+
+    for i, val in enumerate(vals):
+        best_mult, best_shift = get_mult_shift(val, mult_bits=mult_bits, shift_bits=shift_bits)
+        best_mults[i] = best_mult
+        best_shifts[i] = best_shift
+
+    return best_mults, best_shifts
+
+
+def unsqueeze_1d_to_4d(x, dim):
+    if dim == 0:
+        return x.unsqueeze(1).unsqueeze(2).unsqueeze(3)
+    elif dim == 1:
+        return x.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+    elif dim == 2:
+        return x.unsqueeze(0).unsqueeze(1).unsqueeze(3)
+    else:
+        return x.unsqueeze(0).unsqueeze(1).unsqueeze(2)
+
+
 def quantize_tensor(x, scale, zp):
     return (zp + (x / scale)).round()
+
+
+def quantize_tensor_4d(x, scale, zp):
+    return (unsqueeze_1d_to_4d(zp, dim=0) + (x / unsqueeze_1d_to_4d(scale, dim=0))).round()
+
+
+def quantize_4d_tensor_per_channel(x, scales, zps):
+    # TODO: use that instead of the above
+    zps_4d = unsqueeze_1d_to_4d(zps, dim=0)
+    return (torch.einsum("c,nchw->nchw", 1/scales, x) + zps_4d).round()
 
 
 def dequantize_tensor(q_x, scale, zp):
     return scale * (q_x.float() - zp)
 
 
+def dequantize_4d_tensor_per_channel(q_x, scales, zps):
+    zps_4d = unsqueeze_1d_to_4d(zps, dim=0)
+    return torch.einsum("c,cnhw->cnhw", scales, q_x.float()) - zps_4d  # n is in_channels
+
+
+def stats_over_4d_tensor_per_channel(x, stat):
+    stats = torch.zeros(x.shape[0], device='cuda')
+    for channel in range(x.shape[0]):
+        stats[channel] = stat(x[channel])
+    return stats
+
+
 def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step=None, bits=8, fib=False, strategy='quantile'):
-    low_val_w, high_val_w = layer.weight.data.min().item(), layer.weight.data.max().item()
-    scale_w, zp_w = calc_scale_zero_point(low_val_w, high_val_w, bits=bits, fib=fib)
-    q_w = quantize_tensor(layer.weight.data, scale_w, zp_w)
+    if type(layer) == nn.Linear:
+        low_vals_w, high_vals_w = layer.weight.data.min().unsqueeze(0), layer.weight.data.max().unsqueeze(0)
+    elif type(layer) == nn.Conv2d:
+        low_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.min)
+        high_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.max)
+    else:
+        print("ERROR")
+        low_vals_w, high_vals_w = None, None
+
+    scales_w, zps_w = calc_scales_zero_points(low_vals_w, high_vals_w, bits=bits, fib=fib)
+    if type(layer) == nn.Conv2d:
+        q_w = quantize_tensor_4d(layer.weight.data, scales_w, zps_w)
+    elif type(layer) == nn.Linear:
+        q_w = quantize_tensor(layer.weight.data, scales_w, zps_w)
+    else:
+        print("ERROR")
+        q_w = None
+
     if layer.bias is not None:
-        q_b = quantize_tensor(layer.bias.data, scale_w * scale_x, 0)
+        q_b = quantize_tensor(layer.bias.data, scales_w * scale_x, torch.tensor([0], device='cuda'))
     else:
         q_b = None
 
-    combined_scale = scale_x * scale_w / scale_x_next
-    best_mult, best_shift = get_mult_shift(combined_scale, bits, ACC_BITS)
+    combined_scales = scale_x * scales_w / scale_x_next
+    best_mults, best_shifts = get_mults_shifts(combined_scales, bits, ACC_BITS)
 
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
     if fib:
@@ -102,7 +174,7 @@ def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step
     else:
         Ts = torch.ones_like(q_w)
 
-    return q_w, q_b, best_shift, best_mult, zp_w, scale_w, scale_x, combined_scale, Ts
+    return q_w, q_b, best_shifts, best_mults, zps_w, scales_w, scale_x, combined_scales, Ts
 
 
 def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8, fib=False, strategy='quantile'):
@@ -146,9 +218,9 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
 
         # Initialization
         qmodel.register_parameter('bits', nn.Parameter(torch.tensor(bits), requires_grad=False))
-        qmodel.register_parameter('low_val_input', nn.Parameter(torch.tensor(stats['0'][low_key]), requires_grad=False))
-        qmodel.register_parameter('high_val_input', nn.Parameter(torch.tensor(stats['0'][high_key]), requires_grad=False))
-        scale_x, zp_x = calc_scale_zero_point(low_val=qmodel.low_val_input.item(), high_val=qmodel.high_val_input.item(), bits=bits)
+        qmodel.register_parameter('low_val_input', nn.Parameter(stats['0'][low_key], requires_grad=False))
+        qmodel.register_parameter('high_val_input', nn.Parameter(stats['0'][high_key], requires_grad=False))
+        scale_x, zp_x = calc_scale_zero_point(low_val=qmodel.low_val_input, high_val=qmodel.high_val_input, bits=bits)
 
         assert(len(stat_names) == len(layers) and len(layers) == len(indices))
         # for name, layer, fib_layer in zip(stat_names, layers, fib_layers):
@@ -157,33 +229,35 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
                 scale_x_next, zp_x_next = 1.0, 0
             else:
                 scale_x_next, zp_x_next = calc_scale_zero_point(low_val=stats[name][low_key], high_val=stats[name][high_key], bits=bits, fib=False)
-            q_w, q_b, shift, mult, zp_w, scale_w, scale_x, combined_scale, Ts = \
+            q_w, q_b, shifts, mults, zps_w, scales_w, scale_x, combined_scales, Ts = \
                 compute_quantized_layer(layer, scale_x, scale_x_next, proportions=proportions, step=step, bits=bits, fib=fib, strategy=strategy)  # fib=(fib and fib_layer)
             optimizer.param_groups[0]['Ts'][idx] = Ts
-
             layer.weight.data = q_w
             if layer.bias is not None:
                 layer.bias.data = q_b
-            layer.register_parameter('zp_x', torch.nn.Parameter(data=torch.tensor(zp_x, device='cuda'), requires_grad=False))
-            layer.register_parameter('zp_w', torch.nn.Parameter(data=torch.tensor(zp_w, device='cuda'), requires_grad=False))
+            layer.register_parameter('zp_x', torch.nn.Parameter(data=zp_x, requires_grad=False))
+            layer.register_parameter('zps_w', torch.nn.Parameter(data=zps_w, requires_grad=False))
 
-            layer.register_parameter('scale_b', torch.nn.Parameter(data=torch.tensor(scale_x * scale_w, device='cuda'), requires_grad=False))
-            layer.register_parameter('scale_w', torch.nn.Parameter(data=torch.tensor(scale_w, device='cuda'), requires_grad=False))
+            layer.register_parameter('scale_b', torch.nn.Parameter(data=scale_x * scales_w, requires_grad=False))
+            layer.register_parameter('scales_w', torch.nn.Parameter(data=scales_w, requires_grad=False))
             if name == 'none':
-                layer.register_parameter('shift', torch.nn.Parameter(data=torch.tensor(0, device='cuda'), requires_grad=False))
-                layer.register_parameter('mult', torch.nn.Parameter(data=torch.tensor(1, device='cuda'), requires_grad=False))
+                layer.register_parameter('shifts', torch.nn.Parameter(data=torch.tensor([0], device='cuda'), requires_grad=False))
+                layer.register_parameter('mults', torch.nn.Parameter(data=torch.tensor([1], device='cuda'), requires_grad=False))
                 layer.register_parameter('zp_x_next', torch.nn.Parameter(data=torch.tensor(0, device='cuda'), requires_grad=False))
             else:
-                layer.register_parameter('shift', torch.nn.Parameter(data=torch.tensor(shift, device='cuda'), requires_grad=False))
-                layer.register_parameter('mult', torch.nn.Parameter(data=torch.tensor(mult, device='cuda'), requires_grad=False))
-                layer.register_parameter('zp_x_next', torch.nn.Parameter(data=torch.tensor(zp_x_next, device='cuda'), requires_grad=False))
+                layer.register_parameter('shifts', torch.nn.Parameter(data=shifts, requires_grad=False))
+                layer.register_parameter('mults', torch.nn.Parameter(data=mults, requires_grad=False))
+                layer.register_parameter('zp_x_next', torch.nn.Parameter(data=zp_x_next, requires_grad=False))
 
             if type(layer) in supported_modules:
                 if type(layer) == nn.Conv2d:
-                    # Use only 1 out channel since anyway all kernels are the same
-                    layer.zp_w_kernel = nn.Conv2d(layer.in_channels, 1, layer.kernel_size, stride=layer.stride, padding=layer.padding,
+                    # The kernels are identical along the layer.in_channels axis, that could be made more efficiently
+                    layer.zp_w_kernel = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                                   dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
-                    layer.zp_w_kernel.weight.data.fill_(zp_w)
+
+                    for out_channel in range(layer.out_channels):
+                        layer.zp_w_kernel.weight.data[out_channel].fill_(zps_w[out_channel])
+
                     layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()
                     layer.unbiased_layer = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                                      dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
@@ -191,7 +265,7 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
 
                 if type(layer) == nn.Linear:
                     layer.zp_w_kernel = nn.Linear(layer.in_features, layer.out_features, bias=False)
-                    layer.zp_w_kernel.weight.data.fill_(zp_w)
+                    layer.zp_w_kernel.weight.data.fill_(zps_w[0])
                     layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()
                     layer.unbiased_layer = nn.Linear(layer.in_features, layer.out_features, bias=False)
                     layer.unbiased_layer.weight.data = layer.weight.data
@@ -213,16 +287,22 @@ def update_model(model, qmodel):
     with torch.no_grad():
         for i, qlayer in enumerate(qmodel.seq):
             if type(qlayer) in supported_modules:  # Only these layers have been modified
-                model.seq[i].weight.data = dequantize_tensor(qlayer.weight.data, qlayer.scale_w, qlayer.zp_w)
+                if type(qlayer) == nn.Conv2d:
+                    model.seq[i].weight.data = dequantize_4d_tensor_per_channel(qlayer.weight.data, qlayer.scales_w, qlayer.zps_w)
+                elif type(qlayer) == nn.Linear:
+                    model.seq[i].weight.data = dequantize_tensor(qlayer.weight.data, qlayer.scales_w, qlayer.zps_w)
                 if model.seq[i].bias is not None:
-                    model.seq[i].bias.data = dequantize_tensor(qlayer.bias.data, qlayer.scale_b, 0)
+                    model.seq[i].bias.data = dequantize_tensor(qlayer.bias.data, qlayer.scale_b, torch.tensor([0], device='cuda'))
 
 
 def update_qmodel(qmodel, model):
     with torch.no_grad():
         for i, layer in enumerate(model.seq):
             if type(layer) in supported_modules:  # Only these layers have been modified
-                qmodel.seq[i].weight.data = quantize_tensor(model.seq[i].weight.data, qmodel.seq[i].scale_w, qmodel.seq[i].zp_w)
+                if type(layer) == nn.Conv2d:
+                    qmodel.seq[i].weight.data = quantize_tensor_4d(model.seq[i].weight.data, qmodel.seq[i].scales_w, qmodel.seq[i].zps_w)
+                elif type(layer) == nn.Linear:
+                    qmodel.seq[i].weight.data = quantize_tensor(model.seq[i].weight.data, qmodel.seq[i].scales_w, qmodel.seq[i].zps_w)
                 if qmodel.seq[i].bias is not None:
                     qmodel.seq[i].bias.data = quantize_tensor(model.seq[i].bias.data, qmodel.seq[i].scale_b, 0)
                 qmodel.seq[i].unbiased_layer.weight.data = qmodel.seq[i].weight.data
@@ -260,9 +340,13 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
 
     if type(layer) == nn.Linear:  # For linear layers only
         q_x_sum = torch.sum(q_x, dim=1)
-        part2 = torch.unsqueeze(q_x_sum * layer.zp_w, dim=1)
-    else:
+        assert len(layer.zps_w == 1)
+        part2 = torch.unsqueeze(q_x_sum * layer.zps_w[0], dim=1)
+    elif type(layer) == nn.Conv2d:
         part2 = layer.zp_w_kernel(q_x)  # Apply the convolution with the zp_w_kernel (way less computations than with a conv layer since it only has 1 out channel)
+    else:
+        print("ERROR: qlayer_forward not implemented for layer of type " + repr(type(layer)))
+        part2 = None
 
     if use_mean:
         part3 = layer.part3
@@ -283,7 +367,17 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
     # We could use int instead of long for 8 bits (no risk of overflowing the int32 range)
-    output = ((layer.mult * result.long()) >> layer.shift).float() + layer.zp_x_next
+    if type(layer) == nn.Linear:
+        output = ((layer.mults[0] * result.long()) >> layer.shifts[0]).float() + layer.zp_x_next
+    elif type(layer) == nn.Conv2d:
+        # result shape: n x c x h x w
+        # layer.mults, layer.shifts, scales shape: c
+        scales = torch.mul(layer.mults, 2 ** layer.shifts)
+        output = torch.einsum("c,nchw->nchw", scales, result.long()) + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0), dim=1)
+        # output = ((layer.mults * result.long()) >> layer.shifts).float() + layer.zp_x_next
+    else:
+        print("ERROR: qlayer_forward not implemented for layer of type " + repr(type(layer)))
+        output = None
 
     if log and not gathering_stats:
         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
@@ -300,11 +394,10 @@ def qmodel_forward(qmodel, x, bits=8, layers_stats=None):
 
     input_qmin, input_qmax = calc_qmin_qmax(bits)
 
-    scale_x, zp_x = calc_scale_zero_point(qmodel.low_val_input.item(), qmodel.high_val_input.item(), bits=bits, fib=False)
+    scale_x, zp_x = calc_scale_zero_point(qmodel.low_val_input, qmodel.high_val_input, bits=bits, fib=False)
     x = quantize_tensor(x, scale_x, zp_x)
     too_low_sum = 0
     too_high_sum = 0
-
     i = 0
     for layer in qmodel.seq:
         if type(layer) in supported_modules:

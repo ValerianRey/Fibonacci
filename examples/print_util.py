@@ -64,8 +64,8 @@ def print_quantization_params(name, layer, bits=8):
     percentage_fib = proportion_fib(layer.weight, bits) * 100
     _, distances = fib_distances(layer.weight, bits)
     avg_fib_dist = distances.mean()
-    print(name + " quantization data: " + "bits=" + repr(bits) + ", shift=" + repr(layer.shift)
-          + ", mult=" + repr(layer.mult) + ", zp_x=" + repr(layer.zp_x)
+    print(name + " quantization data: " + "bits=" + repr(bits) + ", shifts=" + repr(layer.shifts)
+          + ", mults=" + repr(layer.mults) + ", zp_x=" + repr(layer.zp_x)
           + ", zp_x_next=" + repr(layer.zp_x_next) + ", {0:.1f}% of Fibonacci encoded weights".format(percentage_fib)
           + ", Average fib distance: {0:.2f}".format(avg_fib_dist) + Color.END)
 

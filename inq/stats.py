@@ -53,25 +53,23 @@ def gather_stats(model, loader):
         print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=True)
     final_stats = {}
     for key, value in stats.items():
-        final_stats[key] = {"avg_max": (value["max_sum"] / value["samples"]).item(), "avg_min": (value["min_sum"] / value["samples"]).item(),
-                            "max": value["max"].item(), "min": value["min"].item()}
+        final_stats[key] = {"avg_max": (value["max_sum"] / value["samples"]), "avg_min": (value["min_sum"] / value["samples"]),
+                            "max": value["max"], "min": value["min"]}
 
     # print("Gathering completed")
     return final_stats
 
 
 def load_or_gather_stats(model, train_stats_loader, load, saves_path):
-    stats_path = saves_path + 'stats.pkl'
+    stats_path = saves_path + 'stats.pth'
     if load:
         print("Loading stats from save, be sure to remove this when the quantization scheme changes")
-        with open(stats_path, 'rb') as handle:
-            stats = pickle.load(handle)
+        stats = torch.load(stats_path)
 
     else:
         stats = gather_stats(model, train_stats_loader)
         # print("Saving stats for later use (if same quantization scheme)")
-        with open(stats_path, 'wb') as handle:
-            pickle.dump(stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        torch.save(stats, stats_path)
 
     return stats
 

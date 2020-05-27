@@ -52,7 +52,7 @@ settings_dict = {
     'iterative_steps': [0.3, 0.5, 0.7, 0.9, 0.95, 0.99, 1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
     'log_dir': "logs/",
     'tensorboard': False,
-    'pretrain': True,
+    'pretrain': False,
     'load_model': True,
     'load_stats': True,  # Be very careful to recompute the stats when the quantization scheme changes
     'load_layers_means': False,  # Same here
