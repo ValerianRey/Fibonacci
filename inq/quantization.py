@@ -25,7 +25,11 @@ def calc_qmin_qmax(bits=8, negative=False, fib=False):
 
 def calc_scale_zero_point(low_val, high_val, bits=8, fib=False):
     qmin, qmax = calc_qmin_qmax(bits=bits, fib=fib)
-    scale = (high_val - low_val) / (qmax - qmin)
+    if high_val == low_val:
+        # In this case the value is constant anyway so we just give an arbitrary value to scale that is not infinity
+        scale = 1
+    else:
+        scale = (high_val - low_val) / (qmax - qmin)
     zp = round((qmin - low_val / scale))
     # The need to clamp zp depends on how we handle it. For example in a linear layer zp_w is only multiplied once, so it depends on what
     # piece of hardware we use to make that multiplication (is it important to have it on uint8, or is int32 ok, or even float32?)
@@ -43,7 +47,7 @@ def calc_scale_zero_point(low_val, high_val, bits=8, fib=False):
 
 
 # Can be very long to compute for high number of bits
-def get_mult_shift(val, mult_bits=8, shift_bits=32):
+def get_mult_shift_old(val, mult_bits=8, shift_bits=32):
     best_mult = 1
     best_shift = 0
     best_diff = abs(val - best_mult)
@@ -54,6 +58,21 @@ def get_mult_shift(val, mult_bits=8, shift_bits=32):
                 best_diff = abs(s_val - mult)
                 best_mult = mult
                 best_shift = shift
+    return best_mult, best_shift
+
+
+# Can be very long to compute for high number of bits
+def get_mult_shift(val, mult_bits=8, shift_bits=32):
+    best_mult = 1
+    best_shift = 0
+    best_diff = abs(val - best_mult)
+    for shift in range(shift_bits):
+        s_val = val * (2 ** shift)
+        mult = min(max(round(s_val), 1), 2 ** mult_bits - 1)
+        if abs(s_val - mult) < best_diff:
+            best_diff = abs(s_val - mult)
+            best_mult = mult
+            best_shift = shift
     return best_mult, best_shift
 
 

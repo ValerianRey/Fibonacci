@@ -26,8 +26,8 @@ from os import path
 import inq
 
 settings_dict = {
-    'dataset': 'cifar10',  # 'mnist', 'cifar10'
-    'arch': 'PARN18_nores',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
+    'dataset': 'mnist',  # 'mnist', 'cifar10'
+    'arch': 'Net_2',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
     'workers': 8,  # Increasing that seems to require A LOT of RAM memory (default was 8)
     'epochs': 4,
     'retrain_epochs': 5,
@@ -54,7 +54,7 @@ settings_dict = {
     'tensorboard': False,
     'pretrain': True,
     'load_model': True,
-    'load_stats': False,  # Be very careful to recompute the stats when the quantization scheme changes
+    'load_stats': True,  # Be very careful to recompute the stats when the quantization scheme changes
     'load_layers_means': False,  # Same here
     'load_qmodel_fib': False
 }
