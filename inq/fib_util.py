@@ -160,6 +160,6 @@ def fib_quantize_tensor(q_tensor, proportions, step, bits=8, strategy='quantile'
             Ts = torch.where(rand <= proportion, zeros, ones)
             q_tensor = torch.where(rand <= proportion, q_tensor_fib, q_tensor)
         else:
-            print('ERROR: strategy ' + strategy + ' not implemented')
+            raise ValueError("Unknown strategy: {}".format(strategy))
         return q_tensor, Ts
 

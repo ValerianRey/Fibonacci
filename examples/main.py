@@ -26,8 +26,8 @@ from os import path
 import inq
 
 settings_dict = {
-    'dataset': 'mnist',  # 'mnist', 'cifar10'
-    'arch': 'Net_2',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
+    'dataset': 'cifar10',  # 'mnist', 'cifar10'
+    'arch': 'LeNet',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
     'workers': 8,  # Increasing that seems to require A LOT of RAM memory (default was 8)
     'epochs': 4,
     'retrain_epochs': 5,
@@ -49,12 +49,12 @@ settings_dict = {
     'quantize': True,
     'strategy': 'reverse_quantile',
     'weight_bits': 8,
-    'iterative_steps': [0.3, 0.5, 0.7, 0.9, 0.95, 0.99, 1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
+    'iterative_steps': [0.3, 0.5, 0.7, 0.9, 1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
     'log_dir': "logs/",
     'tensorboard': False,
-    'pretrain': False,
-    'load_model': True,
-    'load_stats': True,  # Be very careful to recompute the stats when the quantization scheme changes
+    'pretrain': True,
+    'load_model': False,
+    'load_stats': False,  # Be very careful to recompute the stats when the quantization scheme changes
     'load_layers_means': False,  # Same here
     'load_qmodel_fib': False
 }
@@ -67,11 +67,8 @@ def main():
         torch.manual_seed(args.seed)
         cudnn.deterministic = True
         shuffle = False
-        warnings.warn('You have chosen to seed training. '
-                      'This will turn on the CUDNN deterministic setting, '
-                      'which can slow down your training considerably! '
-                      'You may see unexpected behavior when restarting '
-                      'from checkpoints.')
+        warnings.warn('You have chosen to seed training. This will turn on the CUDNN deterministic setting, '
+                      'which can slow down your training considerably! You may see unexpected behavior when restarting from checkpoints.')
     else:
         shuffle = True
 
@@ -82,6 +79,11 @@ def main_worker(args, shuffle=True):
     global best_acc1
 
     if args.dataset == 'mnist':
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))])
+        train_dataset = datasets.MNIST('', train=True, download=True, transform=transform)
+        val_dataset = datasets.MNIST('', train=False, transform=transform)
         if args.arch == 'Net':
             model = mnist_models.Net(non_linearity=nn.ReLU).cuda()
         elif args.arch == 'Net_sigmoid':
@@ -92,6 +94,11 @@ def main_worker(args, shuffle=True):
             model = mnist_models.Net(non_linearity=nn.ReLU).cuda()
 
     elif args.dataset == 'cifar10':
+        transform = transforms.Compose(
+            [transforms.ToTensor(),
+             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
+        train_dataset = datasets.CIFAR10('CIFAR10', train=True, download=True, transform=transform)
+        val_dataset = datasets.CIFAR10('CIFAR10', train=False, download=True, transform=transform)
         if args.arch == 'LeNet' or args.arch == 'LeNet2':
             model = cifar10_models.LeNet(dropout=False).cuda()
         if args.arch == 'LeNetDropout':
@@ -107,6 +114,9 @@ def main_worker(args, shuffle=True):
         if args.arch == 'PARN18_nores_noaffine':
             model = cifar10_models.parn(depth=18, affine_batch_norm=False).cuda()
 
+    else:
+        raise ValueError("Dataset {} not supported. Use mnist or cifar10.".format(args.dataset))
+
     saves_path = 'saves/' + args.dataset + '/' + args.arch + '/'
     model_path = saves_path + 'model.pth'
     qmodel_fib_path = saves_path + 'qmodel_fib.pth'
@@ -115,21 +125,6 @@ def main_worker(args, shuffle=True):
     optimizer = inq.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay, weight_bits=args.weight_bits)
 
     cudnn.benchmark = True
-
-    if args.dataset == 'mnist':
-        transform = transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.1307,), (0.3081,))])
-        train_dataset = datasets.MNIST('', train=True, download=True, transform=transform)
-        val_dataset = datasets.MNIST('', train=False, transform=transform)
-    elif args.dataset == 'cifar10':
-        transform = transforms.Compose(
-            [transforms.ToTensor(),
-             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-        train_dataset = datasets.CIFAR10('CIFAR10', train=True, download=True, transform=transform)
-        val_dataset = datasets.CIFAR10('CIFAR10', train=False, download=True, transform=transform)
-    else:
-        print("ERROR: no such dataset")
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=shuffle,
                                                num_workers=args.workers, pin_memory=True)
@@ -206,7 +201,7 @@ def main_worker(args, shuffle=True):
             if qepoch == 0:  # The int quantized qmodel is only produced once
                 validate(val_loader, model, criterion, args, title='Test original network')
                 qmodel_int = compute_qmodel(model, stats, optimizer, bits=args.weight_bits, fib=False)
-                print_seq_model(qmodel_int, how='long')
+                # print_seq_model(qmodel_int, how='long')
                 layers_means = load_or_gather_layers_means(qmodel_int, args, dummy_batch, load=args.load_layers_means, fib=False)
                 qmodel_int = enhance_qmodel(qmodel_int, layers_means)
                 validate(val_loader, qmodel_int, criterion, args, quantized=True, fib=False, title='Test int')

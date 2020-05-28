@@ -94,6 +94,6 @@ def parn(depth=18, affine_batch_norm=True):
     elif depth == 152:
         return PreActResNet(pre_act_bottleneck, 4, [3, 8, 36, 3], affine_batch_norm)
     else:
-        print("ERROR: Depth not supported (use 18, 34, 50, 101 or 152)")
+        raise ValueError("Depth {} not supported. Use 18, 34, 50, 101 or 152.".format(depth))
 
 

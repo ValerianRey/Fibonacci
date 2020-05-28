@@ -115,14 +115,14 @@ def quantize_tensor(x, scale, zp):
     return (zp + (x / scale)).round()
 
 
-def quantize_tensor_4d(x, scale, zp):
-    return (unsqueeze_1d_to_4d(zp, dim=0) + (x / unsqueeze_1d_to_4d(scale, dim=0))).round()
+def quantize_tensor_4d(x, scales, zps):
+    return (unsqueeze_1d_to_4d(zps, dim=0) + (x / unsqueeze_1d_to_4d(scales, dim=0))).round()
 
 
 def quantize_4d_tensor_per_channel(x, scales, zps):
     # TODO: use that instead of the above
     zps_4d = unsqueeze_1d_to_4d(zps, dim=0)
-    return (torch.einsum("c,nchw->nchw", 1/scales, x) + zps_4d).round()
+    return (torch.einsum("c,cnhw->cnhw", 1/scales, x) + zps_4d).round()
 
 
 def dequantize_tensor(q_x, scale, zp):
@@ -142,23 +142,21 @@ def stats_over_4d_tensor_per_channel(x, stat):
 
 
 def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step=None, bits=8, fib=False, strategy='quantile'):
+    if not type(layer) in supported_modules:
+        raise TypeError("compute_quantized_layer not implemented for layer of type {}".format(type(layer).__name__))
+
+    # print("Compute quantized layer of type " + repr(type(layer)))
     if type(layer) == nn.Linear:
         low_vals_w, high_vals_w = layer.weight.data.min().unsqueeze(0), layer.weight.data.max().unsqueeze(0)
     elif type(layer) == nn.Conv2d:
         low_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.min)
         high_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.max)
-    else:
-        print("ERROR")
-        low_vals_w, high_vals_w = None, None
 
     scales_w, zps_w = calc_scales_zero_points(low_vals_w, high_vals_w, bits=bits, fib=fib)
     if type(layer) == nn.Conv2d:
         q_w = quantize_tensor_4d(layer.weight.data, scales_w, zps_w)
     elif type(layer) == nn.Linear:
         q_w = quantize_tensor(layer.weight.data, scales_w, zps_w)
-    else:
-        print("ERROR")
-        q_w = None
 
     if layer.bias is not None:
         q_b = quantize_tensor(layer.bias.data, scales_w * scale_x, torch.tensor([0], device='cuda'))
@@ -332,6 +330,9 @@ def increase_fib_proportion(qmodel, optimizer, bits, proportions, step, strategy
 
 
 def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
+    if not type(layer) in supported_modules:
+        raise TypeError("qlayer_forward not implemented for layer of type {}".format(type(layer).__name__))
+
     gathering_stats = layer_stats is not None
     log = False
     if log and not gathering_stats:
@@ -344,10 +345,8 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
         assert len(layer.zps_w == 1)
         part2 = torch.unsqueeze(q_x_sum * layer.zps_w[0], dim=1)
     elif type(layer) == nn.Conv2d:
-        part2 = layer.zp_w_kernel(q_x)  # Apply the convolution with the zp_w_kernel (way less computations than with a conv layer since it only has 1 out channel)
-    else:
-        print("ERROR: qlayer_forward not implemented for layer of type " + repr(type(layer)))
-        part2 = None
+        # Apply the convolution with the zp_w_kernel
+        part2 = layer.zp_w_kernel(q_x)
 
     if use_mean:
         part3 = layer.part3
@@ -373,12 +372,9 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
     elif type(layer) == nn.Conv2d:
         # result shape: n x c x h x w
         # layer.mults, layer.shifts, scales shape: c
-        scales = torch.mul(layer.mults, 2 ** layer.shifts)
+        scales = torch.mul(layer.mults, 1 / (2 ** layer.shifts))
+        # TODO: use int multiplication and shift instead of fp multiplication
         output = torch.einsum("c,nchw->nchw", scales, result.long()) + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0), dim=1)
-        # output = ((layer.mults * result.long()) >> layer.shifts).float() + layer.zp_x_next
-    else:
-        print("ERROR: qlayer_forward not implemented for layer of type " + repr(type(layer)))
-        output = None
 
     if log and not gathering_stats:
         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
@@ -388,7 +384,7 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
 def qmodel_forward(qmodel, x, bits=8, layers_stats=None):
     # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
     gathering_stats = layers_stats is not None
-    print_clamped_values = True and not gathering_stats  # Never print the clamped values when collecting stats
+    print_clamped_values = False and not gathering_stats  # Never print the clamped values when collecting stats
     use_mean = True
     if print_clamped_values:
         print()
