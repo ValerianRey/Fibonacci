@@ -131,7 +131,7 @@ def dequantize_tensor(q_x, scale, zp):
 
 def dequantize_4d_tensor_per_channel(q_x, scales, zps):
     zps_4d = unsqueeze_1d_to_4d(zps, dim=0)
-    return torch.einsum("c,cnhw->cnhw", scales, q_x.float()) - zps_4d  # n is in_channels
+    return torch.einsum("c,cnhw->cnhw", scales, q_x.float() - zps_4d)  # n is in_channels
 
 
 def stats_over_4d_tensor_per_channel(x, stat):
@@ -231,6 +231,7 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
                 scale_x_next, zp_x_next = calc_scale_zero_point(low_val=stats[name][low_key], high_val=stats[name][high_key], bits=bits, fib=False)
             q_w, q_b, shifts, mults, zps_w, scales_w, scale_x, combined_scales, Ts = \
                 compute_quantized_layer(layer, scale_x, scale_x_next, proportions=proportions, step=step, bits=bits, fib=fib, strategy=strategy)  # fib=(fib and fib_layer)
+
             optimizer.param_groups[0]['Ts'][idx] = Ts
             layer.weight.data = q_w
             if layer.bias is not None:
@@ -238,7 +239,7 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
             layer.register_parameter('zp_x', torch.nn.Parameter(data=zp_x, requires_grad=False))
             layer.register_parameter('zps_w', torch.nn.Parameter(data=zps_w, requires_grad=False))
 
-            layer.register_parameter('scale_b', torch.nn.Parameter(data=scale_x * scales_w, requires_grad=False))
+            layer.register_parameter('scales_b', torch.nn.Parameter(data=scale_x * scales_w, requires_grad=False))
             layer.register_parameter('scales_w', torch.nn.Parameter(data=scales_w, requires_grad=False))
             if name == 'none':
                 layer.register_parameter('shifts', torch.nn.Parameter(data=torch.tensor([0], device='cuda'), requires_grad=False))
@@ -292,7 +293,7 @@ def update_model(model, qmodel):
                 elif type(qlayer) == nn.Linear:
                     model.seq[i].weight.data = dequantize_tensor(qlayer.weight.data, qlayer.scales_w, qlayer.zps_w)
                 if model.seq[i].bias is not None:
-                    model.seq[i].bias.data = dequantize_tensor(qlayer.bias.data, qlayer.scale_b, torch.tensor([0], device='cuda'))
+                    model.seq[i].bias.data = dequantize_tensor(qlayer.bias.data, qlayer.scales_b, torch.tensor([0], device='cuda'))
 
 
 def update_qmodel(qmodel, model):
@@ -304,7 +305,7 @@ def update_qmodel(qmodel, model):
                 elif type(layer) == nn.Linear:
                     qmodel.seq[i].weight.data = quantize_tensor(model.seq[i].weight.data, qmodel.seq[i].scales_w, qmodel.seq[i].zps_w)
                 if qmodel.seq[i].bias is not None:
-                    qmodel.seq[i].bias.data = quantize_tensor(model.seq[i].bias.data, qmodel.seq[i].scale_b, 0)
+                    qmodel.seq[i].bias.data = quantize_tensor(model.seq[i].bias.data, qmodel.seq[i].scales_b, 0)
                 qmodel.seq[i].unbiased_layer.weight.data = qmodel.seq[i].weight.data
                 for p in qmodel.seq[i].unbiased_layer.parameters():
                     p.requires_grad = False
@@ -387,7 +388,7 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
 def qmodel_forward(qmodel, x, bits=8, layers_stats=None):
     # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
     gathering_stats = layers_stats is not None
-    print_clamped_values = False and not gathering_stats  # Never print the clamped values when collecting stats
+    print_clamped_values = True and not gathering_stats  # Never print the clamped values when collecting stats
     use_mean = True
     if print_clamped_values:
         print()

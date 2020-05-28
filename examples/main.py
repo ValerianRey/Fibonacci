@@ -206,6 +206,7 @@ def main_worker(args, shuffle=True):
             if qepoch == 0:  # The int quantized qmodel is only produced once
                 validate(val_loader, model, criterion, args, title='Test original network')
                 qmodel_int = compute_qmodel(model, stats, optimizer, bits=args.weight_bits, fib=False)
+                print_seq_model(qmodel_int, how='long')
                 layers_means = load_or_gather_layers_means(qmodel_int, args, dummy_batch, load=args.load_layers_means, fib=False)
                 qmodel_int = enhance_qmodel(qmodel_int, layers_means)
                 validate(val_loader, qmodel_int, criterion, args, quantized=True, fib=False, title='Test int')
@@ -220,6 +221,7 @@ def main_worker(args, shuffle=True):
 
             # Plug the fib quantized values inside of the original model
             update_model(model, qmodel_fib)
+            optimizer.reset_lr(args.lr_retrain)
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma_retrain)
             optimizer.reset_momentum()
             for epoch in range(args.start_epoch, args.retrain_epochs):

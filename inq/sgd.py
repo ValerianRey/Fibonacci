@@ -125,6 +125,13 @@ class SGD(Optimizer):
 
         return loss
 
+    def reset_lr(self, base_lr):
+        state = self.state_dict()['state']
+        pg = self.state_dict()['param_groups']
+        for group in range(len(pg)):
+            pg[group]['lr'] = base_lr
+        self.load_state_dict({'state': state, 'param_groups': pg})
+
     # Resets the optimizer without resetting the Ts
     def reset_momentum(self):
         self.load_state_dict({'state': {}, 'param_groups': self.state_dict()['param_groups']})
