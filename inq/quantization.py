@@ -5,6 +5,8 @@ from examples.supported_modules import supported_modules
 from examples.supported_modules import batch_norm_modules
 import torch
 import copy
+import time
+import torch.nn.functional as F
 
 ACC_BITS = 32
 
@@ -188,12 +190,20 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
     indices = []  # Contains the id of the parameters that will be quantized (as stored in the optimizer)
 
     with torch.no_grad():
-        for j in range(len(qmodel.seq)):
-            # Completely deactivate BatchNorm modules.
-            # The normalization should already be made by our quantization pipeline, and the affine learning should be set to false in the training.
-            if type(qmodel.seq[j]) in batch_norm_modules:
-                print('Disabling batch norm module')
-                qmodel.seq[j] = nn.Identity()
+        for i in range(len(qmodel.seq)):
+            if type(qmodel.seq[i]) in supported_modules:
+                j = 1
+
+                found_bn = False
+                while (i + j) < len(qmodel.seq) and not type(qmodel.seq[i + j]) in supported_modules:
+                    if type(qmodel.seq[i + j]) in batch_norm_modules:
+                        if found_bn:
+                            print("ERROR: multiple batch norm layers found for one quantized layer")
+                        found_bn = True
+                        qmodel.seq[i].bn = qmodel.seq[i + j]
+                        qmodel.seq[i + j] = nn.Identity()
+                    j += 1
+                qmodel.seq[i].has_bn = found_bn
 
         i = 0
         idx = 0
@@ -239,6 +249,7 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
 
             layer.register_parameter('scales_b', torch.nn.Parameter(data=scale_x * scales_w, requires_grad=False))
             layer.register_parameter('scales_w', torch.nn.Parameter(data=scales_w, requires_grad=False))
+            layer.register_parameter('scale_x_next', torch.nn.Parameter(data=torch.tensor(scale_x_next, device='cuda'), requires_grad=False))
             if name == 'none':
                 layer.register_parameter('shifts', torch.nn.Parameter(data=torch.tensor([0], device='cuda'), requires_grad=False))
                 layer.register_parameter('mults', torch.nn.Parameter(data=torch.tensor([1], device='cuda'), requires_grad=False))
@@ -330,6 +341,8 @@ def increase_fib_proportion(qmodel, optimizer, bits, proportions, step, strategy
 
 
 def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
+    # start_time = time.clock()
+
     if not type(layer) in supported_modules:
         raise TypeError("qlayer_forward not implemented for layer of type {}".format(type(layer).__name__))
 
@@ -339,6 +352,8 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
         print(Color.YELLOW + "x_min=" + repr(q_x.min().item()) + ", x_max=" + repr(q_x.max().item()) + Color.END)
 
     part1 = layer(q_x)
+    if layer.has_bn:
+        part1 = part1 - unsqueeze_1d_to_4d(layer.bn.running_mean / layer.scales_b, dim=1)
 
     if type(layer) == nn.Linear:  # For linear layers only
         q_x_sum = torch.sum(q_x, dim=1)
@@ -346,7 +361,9 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
         part2 = torch.unsqueeze(q_x_sum * layer.zps_w[0], dim=1)
     elif type(layer) == nn.Conv2d:
         # Apply the convolution with the zp_w_kernel
-        part2 = layer.zp_w_kernel(q_x)
+        part2 = layer.zp_w_kernel(q_x)  # Use conv layer for zp_w computation
+        # Or use sum pooling and multiply
+        # part2 = torch.einsum("o,nihw->nohw", layer.zps_w, F.avg_pool2d(q_x, layer.kernel_size, stride=1)) * layer.kernel_size[0] * layer.kernel_size[1]
 
     if use_mean:
         part3 = layer.part3
@@ -372,12 +389,27 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
     elif type(layer) == nn.Conv2d:
         # result shape: n x c x h x w
         # layer.mults, layer.shifts, scales shape: c
-        scales = torch.mul(layer.mults, 1 / (2 ** layer.shifts))
-        # TODO: use int multiplication and shift instead of fp multiplication
-        output = torch.einsum("c,nchw->nchw", scales, result.long()) + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0), dim=1)
+
+        # Revert mult and shift to the corresponding combined_scale, then apply fp multiplication (faster on cuda gpu, but uses fp multiplication)
+        # scales = torch.mul(layer.mults, 1 / (2 ** layer.shifts))
+        # output = torch.einsum("c,nchw->nchw", scales, result.long()) + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0), dim=1)
+        if layer.has_bn:
+            bn_mults = layer.bn.weight / (layer.bn.running_var + layer.bn.eps) ** 0.5
+            bn_bias = layer.bn.bias / layer.scale_x_next
+        else:
+            bn_mults = torch.ones_like(layer.mults)
+            bn_bias = torch.zeros_like(layer.mults)
+        # Make the computations by only using int product and shifting (faster on specialized hardware if implemented properly, without a for loop)
+        multiplied_result = torch.einsum("c,nchw->nchw", layer.mults * bn_mults, result.long())
+        for channel in range(multiplied_result.shape[1]):
+            multiplied_result[:, channel, :, :] = multiplied_result[:, channel, :, :] >> layer.shifts[channel]
+        output = multiplied_result + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0) + bn_bias, dim=1)
 
     if log and not gathering_stats:
         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
+
+    # if type(layer) == nn.Conv2d:
+    #     print("Elapsed time for layer of type {}: {}ms".format(type(layer).__name__, (time.clock() - start_time) * 1000))
     return output  # output is an int number stored as float
 
 
