@@ -55,7 +55,6 @@ settings_dict = {
     'pretrain': False,
     'load_model': True,
     'load_stats': True,  # Be very careful to recompute the stats when the quantization scheme changes
-    'load_layers_means': False,  # Same here
     'load_qmodel_fib': False
 }
 
@@ -132,7 +131,7 @@ def main_worker(args, shuffle=True):
     train_stats_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.stats_batch_size, shuffle=shuffle,
                                                      num_workers=args.workers, pin_memory=True)
     dummy_datapoint, _ = train_dataset[0]
-    dummy_batch = dummy_datapoint.unsqueeze(0)
+    dummy_datapoint = dummy_datapoint.unsqueeze(0).cuda()
 
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.val_batch_size, shuffle=shuffle,
                                              num_workers=args.workers, pin_memory=True)
@@ -175,9 +174,7 @@ def main_worker(args, shuffle=True):
         if os.path.isfile(qmodel_fib_path):
             # Here we compute the qmodel from
             print("Computing qmodel from model to be able to copy the save into it")  # TODO: need to improve on that by defining a constructor for empty qmodel
-            qmodel_fib = compute_qmodel(model, stats, optimizer, proportions=args.iterative_steps, step=0, bits=args.weight_bits, fib=True, strategy=args.strategy)
-            layers_means = load_or_gather_layers_means(qmodel_fib, args, dummy_batch, load=args.load_layers_means, fib=True)
-            qmodel_fib = enhance_qmodel(qmodel_fib, layers_means)
+            qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=args.iterative_steps, step=0, bits=args.weight_bits, fib=True, strategy=args.strategy)
             print("Loading checkpoint '{}'".format(qmodel_fib_path))
             checkpoint = torch.load(qmodel_fib_path)
             qmodel_fib.load_state_dict(checkpoint['state_dict'])
@@ -200,17 +197,13 @@ def main_worker(args, shuffle=True):
             print_header(color=Color.UNDERLINE)
             if qepoch == 0:  # The int quantized qmodel is only produced once
                 validate(val_loader, model, criterion, args, title='Test original network')
-                qmodel_int = compute_qmodel(model, stats, optimizer, bits=args.weight_bits, fib=False)
+                qmodel_int = compute_qmodel(model, stats, optimizer, dummy_datapoint, bits=args.weight_bits, fib=False)
                 # print_seq_model(qmodel_int, how='long')
-                layers_means = load_or_gather_layers_means(qmodel_int, args, dummy_batch, load=args.load_layers_means, fib=False)
-                qmodel_int = enhance_qmodel(qmodel_int, layers_means)
                 validate(val_loader, qmodel_int, criterion, args, quantized=True, fib=False, title='Test int')
-                qmodel_fib = compute_qmodel(model, stats, optimizer, proportions=args.iterative_steps, step=0, bits=args.weight_bits, fib=True, strategy=args.strategy)
+                qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=args.iterative_steps, step=0, bits=args.weight_bits, fib=True, strategy=args.strategy)
             else:
                 increase_fib_proportion(qmodel_fib, optimizer, args.weight_bits, args.iterative_steps, qepoch, strategy=args.strategy)
 
-            layers_means = load_or_gather_layers_means(qmodel_fib, args, dummy_batch, load=args.load_layers_means, fib=True)
-            qmodel_fib = enhance_qmodel(qmodel_fib, layers_means)
             title = 'Test ' + '{0:.5f}'.format(args.iterative_steps[qepoch] * 100).rstrip('0').rstrip('.') + '% fib'
             validate(val_loader, qmodel_fib, criterion, args, quantized=True, fib=True, title=title)
 
@@ -228,8 +221,7 @@ def main_worker(args, shuffle=True):
                     validate(val_loader, model, criterion, args, title='Test unscaled')
 
             update_qmodel(qmodel_fib, model)
-            layers_means = load_or_gather_layers_means(qmodel_fib, args, dummy_batch, load=args.load_layers_means, fib=True)
-            qmodel_fib = enhance_qmodel(qmodel_fib, layers_means)
+            precompute_constants(qmodel_fib, dummy_datapoint)
             title = title + ' retrained'
             validate(val_loader, qmodel_fib, criterion, args, quantized=True, fib=True, title=title)
             print_fib_info(average_proportion_fib(qmodel_fib, weighted=True),
@@ -315,7 +307,8 @@ def validate(val_loader, model, criterion, args, quantized=False, fib=False, tit
             # compute output
             if quantized:
                 data = data.cuda()
-                output = qmodel_forward(model, data, bits=args.weight_bits)
+                print(data.shape)
+                output = qmodel_forward(model, data)
             else:
                 output = model(data)
 

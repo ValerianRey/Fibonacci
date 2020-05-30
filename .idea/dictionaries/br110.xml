@@ -2,6 +2,7 @@
   <dictionary name="br110">
     <words>
       <w>mults</w>
+      <w>precompute</w>
       <w>unsqueeze</w>
     </words>
   </dictionary>

@@ -520,3 +520,28 @@
 #             data = data.to(device)
 #             gather_qmodel_part_means(qmodel, data, args, layers_stats)
 #         print_gather(title, batch_idx, len(loader), elapsed_time, color=color, persistent=True)
+
+
+# def gather_qmodel_part_means(qmodel, data, args, layers_stats):
+#     qmodel_forward(qmodel, data, bits=args.weight_bits, layers_stats=layers_stats)
+#
+#
+# def precompute_constants(qmodel, args, batch_data):
+#     qmodel.eval()
+#
+#     layers_stats = []
+#     final_means = []
+#
+#     for layer in qmodel.seq:
+#         if type(layer) in supported_modules:
+#             layers_stats.append({'part3': [], 'part4': []})
+#             final_means.append({})
+#
+#     with torch.no_grad():
+#         batch_data = batch_data.to('cuda')
+#         gather_qmodel_part_means(qmodel, batch_data, args, layers_stats)
+#
+#     for i in range(len(layers_stats)):
+#         final_means[i]['part3'] = torch.mean(torch.cat(layers_stats[i]['part3']), dim=0)
+#         final_means[i]['part4'] = torch.mean(torch.cat(layers_stats[i]['part4']), dim=0)
+#     return final_means

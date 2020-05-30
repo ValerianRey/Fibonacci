@@ -29,7 +29,7 @@ def calc_scale_zero_point(low_val, high_val, bits=8, fib=False):
     qmin, qmax = calc_qmin_qmax(bits=bits, fib=fib)
     if high_val == low_val:
         # In this case the value is constant anyway so we just give an arbitrary value to scale that is not infinity
-        scale = 1
+        scale = torch.tensor(1.)
     else:
         scale = (high_val - low_val) / (qmax - qmin)
 
@@ -165,9 +165,13 @@ def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step
     else:
         q_b = None
 
-    combined_scales = scale_x * scales_w / scale_x_next
-    best_mults, best_shifts = get_mults_shifts(combined_scales, bits, ACC_BITS)
+    if layer.has_bn:
+        bn_mult = layer.bn.weight / ((layer.bn.running_var ** 0.5) + layer.bn.eps)
+    else:
+        bn_mult = torch.tensor(1., device='cuda')
 
+    combined_scales = scale_x * scales_w * bn_mult / scale_x_next
+    best_mults, best_shifts = get_mults_shifts(combined_scales, bits, ACC_BITS)
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
     if fib:
         q_w, Ts = fib_quantize_tensor(q_w, proportions, step, bits=bits, strategy=strategy)
@@ -177,7 +181,7 @@ def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step
     return q_w, q_b, best_shifts, best_mults, zps_w, scales_w, scale_x, combined_scales, Ts
 
 
-def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8, fib=False, strategy='quantile'):
+def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, step=None, bits=8, fib=False, strategy='quantile'):
     # Copy the model into qmodel (and its device)
     qmodel = copy.deepcopy(model)
 
@@ -188,6 +192,12 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
     layers = []
     stat_names = []
     indices = []  # Contains the id of the parameters that will be quantized (as stored in the optimizer)
+
+    # Compute the min and max value of the quantized activation (0 and 255 for example for 8 bits) and register them as parameters
+    # Note that we use fib=False because the activations are not fib encoded
+    activation_qmin, activation_qmax = calc_qmin_qmax(bits=bits, negative=False, fib=False)
+    qmodel.register_parameter('activation_qmin', nn.Parameter(activation_qmin, requires_grad=False))
+    qmodel.register_parameter('activation_qmax', nn.Parameter(activation_qmax, requires_grad=False))
 
     with torch.no_grad():
         for i in range(len(qmodel.seq)):
@@ -200,8 +210,8 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
                         if found_bn:
                             print("ERROR: multiple batch norm layers found for one quantized layer")
                         found_bn = True
-                        qmodel.seq[i].bn = qmodel.seq[i + j]
-                        qmodel.seq[i + j] = nn.Identity()
+                        qmodel.seq[i].bn = qmodel.seq[i + j]  # Attach the batch norm layer to the conv2d layer
+                        qmodel.seq[i + j] = nn.Identity()  # Remove the batch norm layer from the sequential model
                     j += 1
                 qmodel.seq[i].has_bn = found_bn
 
@@ -225,16 +235,18 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
         stat_names.append('none')  # Dummy stat name to indicate that we are at the last layer and we do not actually need the stat
 
         # Initialization
-        qmodel.register_parameter('bits', nn.Parameter(torch.tensor(bits), requires_grad=False))
-        qmodel.register_parameter('low_val_input', nn.Parameter(stats['0'][low_key], requires_grad=False))
-        qmodel.register_parameter('high_val_input', nn.Parameter(stats['0'][high_key], requires_grad=False))
+        qmodel.register_parameter('bits', nn.Parameter(data=torch.tensor(bits), requires_grad=False))
+        qmodel.register_parameter('low_val_input', nn.Parameter(data=stats['0'][low_key], requires_grad=False))
+        qmodel.register_parameter('high_val_input', nn.Parameter(data=stats['0'][high_key], requires_grad=False))
         scale_x, zp_x = calc_scale_zero_point(low_val=qmodel.low_val_input, high_val=qmodel.high_val_input, bits=bits)
+        qmodel.register_parameter('input_scale_x', nn.Parameter(data=scale_x, requires_grad=False))
+        qmodel.register_parameter('input_zp_x', nn.Parameter(data=zp_x, requires_grad=False))
 
         assert(len(stat_names) == len(layers) and len(layers) == len(indices))
         # for name, layer, fib_layer in zip(stat_names, layers, fib_layers):
         for name, layer, idx in zip(stat_names, layers, indices):
             if name == 'none':
-                scale_x_next, zp_x_next = 1.0, 0
+                scale_x_next, zp_x_next = torch.tensor(1.0), torch.tensor(0)
             else:
                 scale_x_next, zp_x_next = calc_scale_zero_point(low_val=stats[name][low_key], high_val=stats[name][high_key], bits=bits, fib=False)
             q_w, q_b, shifts, mults, zps_w, scales_w, scale_x, combined_scales, Ts = \
@@ -246,10 +258,11 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
                 layer.bias.data = q_b
             layer.register_parameter('zp_x', torch.nn.Parameter(data=zp_x, requires_grad=False))
             layer.register_parameter('zps_w', torch.nn.Parameter(data=zps_w, requires_grad=False))
+            layer.register_parameter('scale_x', torch.nn.Parameter(data=scale_x, requires_grad=False))
 
             layer.register_parameter('scales_b', torch.nn.Parameter(data=scale_x * scales_w, requires_grad=False))
             layer.register_parameter('scales_w', torch.nn.Parameter(data=scales_w, requires_grad=False))
-            layer.register_parameter('scale_x_next', torch.nn.Parameter(data=torch.tensor(scale_x_next, device='cuda'), requires_grad=False))
+            layer.register_parameter('scale_x_next', torch.nn.Parameter(data=scale_x_next, requires_grad=False))  # Might be use to handle batch norm. TODO: remove if unused
             if name == 'none':
                 layer.register_parameter('shifts', torch.nn.Parameter(data=torch.tensor([0], device='cuda'), requires_grad=False))
                 layer.register_parameter('mults', torch.nn.Parameter(data=torch.tensor([1], device='cuda'), requires_grad=False))
@@ -288,7 +301,21 @@ def compute_qmodel(model, stats, optimizer, proportions=None, step=None, bits=8,
             scale_x = scale_x_next
             zp_x = zp_x_next
 
+    precompute_constants(qmodel, dummy_datapoint)
+
     return qmodel
+
+
+def precompute_constants(qmodel, dummy_datapoint):
+    qmodel.eval()
+    with torch.no_grad():
+        constants = qmodel_forward(qmodel, dummy_datapoint, computing_constants=True)
+
+    i = 0
+    for layer in qmodel.seq:  # Only iterate over the main modules and not the modules contained in those
+        if type(layer) in supported_modules:
+            layer.register_parameter('constant', torch.nn.Parameter(constants[i], requires_grad=False))
+            i += 1
 
 
 # This function descales an int (+fib) quantized network and puts it in its original form
@@ -340,20 +367,51 @@ def increase_fib_proportion(qmodel, optimizer, bits, proportions, step, strategy
                     idx += 1
 
 
-def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
-    # start_time = time.clock()
+def qmodel_forward(qmodel, x, computing_constants=False):
+    if computing_constants:
+        constants = []
+    # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
+    print_clamped_values = False and not computing_constants  # Never print the clamped values when collecting stats
+    if print_clamped_values:
+        print()
 
+    x = quantize_tensor(x, qmodel.input_scale_x, qmodel.input_zp_x)
+    too_low_sum = 0
+    too_high_sum = 0
+    i = 0
+    for layer in qmodel.seq:
+        if type(layer) in supported_modules:
+            too_low, too_high = count_out(x, qmodel.activation_qmin, qmodel.activation_qmax, log=print_clamped_values)
+            too_low_sum += too_low
+            too_high_sum += too_high
+            x = torch.clamp(x, qmodel.activation_qmin, qmodel.activation_qmax)  # Clamp to be sure that we stay within the uint8 range
+            if computing_constants:
+                x, constant = qlayer_forward(x, layer, computing_constant=True)
+                constants.append(constant)
+            else:
+                print(x.shape)
+                x = qlayer_forward(x, layer)
+                print(x.shape)
+            i += 1
+        else:
+            x = layer(x)
+
+    if computing_constants:
+        return constants
+    else:
+        print(x.shape)
+        return x
+
+
+def qlayer_forward(q_x, layer, computing_constant=False):
     if not type(layer) in supported_modules:
         raise TypeError("qlayer_forward not implemented for layer of type {}".format(type(layer).__name__))
 
-    gathering_stats = layer_stats is not None
     log = False
-    if log and not gathering_stats:
+    if log and not computing_constant:
         print(Color.YELLOW + "x_min=" + repr(q_x.min().item()) + ", x_max=" + repr(q_x.max().item()) + Color.END)
 
     part1 = layer(q_x)
-    if layer.has_bn:
-        part1 = part1 - unsqueeze_1d_to_4d(layer.bn.running_mean / layer.scales_b, dim=1)
 
     if type(layer) == nn.Linear:  # For linear layers only
         q_x_sum = torch.sum(q_x, dim=1)
@@ -365,21 +423,20 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
         # Or use sum pooling and multiply
         # part2 = torch.einsum("o,nihw->nohw", layer.zps_w, F.avg_pool2d(q_x, layer.kernel_size, stride=1)) * layer.kernel_size[0] * layer.kernel_size[1]
 
-    if use_mean:
-        part3 = layer.part3
-        part4 = layer.part4
-    else:
+    if computing_constant:
         zp_x_vec = torch.zeros_like(q_x).fill_(layer.zp_x)
         part3 = layer.unbiased_layer(zp_x_vec)
         part4 = layer.zp_w_kernel(zp_x_vec)
-
-    result = part1 - part2 - part3 + part4
-
-    if gathering_stats:
-        layer_stats['part3'].append(torch.unsqueeze(torch.mean(part3, dim=0), dim=0))
-        layer_stats['part4'].append(torch.unsqueeze(torch.mean(part4, dim=0), dim=0))
-
-    if log and not gathering_stats:
+        if layer.has_bn:
+            bn_mults = layer.bn.weight / ((layer.bn.running_var ** 0.5) - layer.bn.eps)
+            part5 = unsqueeze_1d_to_4d((layer.bn.bias / bn_mults - layer.bn.running_mean) / layer.scale_x, dim=1)
+        else:
+            part5 = torch.zeros_like(part3)
+        constant = - part3 + part4 + part5
+    else:
+        constant = layer.constant
+    result = part1 - part2 + constant
+    if log and not computing_constant:
         print(Color.GRAY + 'result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()) + Color.END)
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
@@ -393,67 +450,19 @@ def qlayer_forward(q_x, layer, layer_stats=None, use_mean=False):
         # Revert mult and shift to the corresponding combined_scale, then apply fp multiplication (faster on cuda gpu, but uses fp multiplication)
         # scales = torch.mul(layer.mults, 1 / (2 ** layer.shifts))
         # output = torch.einsum("c,nchw->nchw", scales, result.long()) + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0), dim=1)
-        if layer.has_bn:
-            bn_mults = layer.bn.weight / (layer.bn.running_var + layer.bn.eps) ** 0.5
-            bn_bias = layer.bn.bias / layer.scale_x_next
-        else:
-            bn_mults = torch.ones_like(layer.mults)
-            bn_bias = torch.zeros_like(layer.mults)
         # Make the computations by only using int product and shifting (faster on specialized hardware if implemented properly, without a for loop)
-        multiplied_result = torch.einsum("c,nchw->nchw", layer.mults * bn_mults, result.long())
+        multiplied_result = torch.einsum("c,nchw->nchw", layer.mults, result.long())
         for channel in range(multiplied_result.shape[1]):
             multiplied_result[:, channel, :, :] = multiplied_result[:, channel, :, :] >> layer.shifts[channel]
-        output = multiplied_result + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0) + bn_bias, dim=1)
+        output = multiplied_result + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0), dim=1)
 
-    if log and not gathering_stats:
+    if log and not computing_constant:
         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
 
-    # if type(layer) == nn.Conv2d:
-    #     print("Elapsed time for layer of type {}: {}ms".format(type(layer).__name__, (time.clock() - start_time) * 1000))
-    return output  # output is an int number stored as float
-
-
-def qmodel_forward(qmodel, x, bits=8, layers_stats=None):
-    # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
-    gathering_stats = layers_stats is not None
-    print_clamped_values = False and not gathering_stats  # Never print the clamped values when collecting stats
-    use_mean = True
-    if print_clamped_values:
-        print()
-
-    input_qmin, input_qmax = calc_qmin_qmax(bits)
-
-    scale_x, zp_x = calc_scale_zero_point(qmodel.low_val_input, qmodel.high_val_input, bits=bits, fib=False)
-    x = quantize_tensor(x, scale_x, zp_x)
-    too_low_sum = 0
-    too_high_sum = 0
-    i = 0
-    for layer in qmodel.seq:
-        if type(layer) in supported_modules:
-            too_low, too_high = count_out(x, input_qmin, input_qmax, log=print_clamped_values)
-            too_low_sum += too_low
-            too_high_sum += too_high
-            x = torch.clamp(x, input_qmin, input_qmax)  # Clamp to be sure that we stay within the uint8 range
-            if gathering_stats:
-                x = qlayer_forward(x, layer, layers_stats[i])
-            else:
-                x = qlayer_forward(x, layer, use_mean=use_mean)
-            i += 1
-        else:
-            x = layer(x)
-
-    return x
-
-
-def enhance_qmodel(qmodel, layers_means):
-    i = 0
-    for layer in qmodel.seq:  # Only iterate over the main modules and not the modules contained in those
-        if type(layer) in supported_modules:
-            layer.register_parameter('part3', torch.nn.Parameter(layers_means[i]['part3'], requires_grad=False))
-            layer.register_parameter('part4', torch.nn.Parameter(layers_means[i]['part4'], requires_grad=False))
-            i += 1
-
-    return qmodel  # Works in place but still returns qmodel
+    if computing_constant:
+        return output, constant
+    else:
+        return output  # output is an int number stored as float
 
 
 # This function returns the proportion of fib weights in a given qmodel, averaged over the layers
