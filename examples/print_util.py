@@ -51,11 +51,12 @@ def print_layer(name, layer, print_data=False):
     if print_data:
         print(data_color + repr(weights) + Color.END)
 
-    biases = layer.bias.data
-    min, max = biases.min().item(), biases.max().item()
-    print(title_color + name + " biases (min=" + repr(min) + ", max=" + repr(max) + ")" + Color.END)
-    if print_data:
-        print(data_color + repr(biases) + Color.END)
+    if layer.bias is not None:
+        biases = layer.bias.data
+        min, max = biases.min().item(), biases.max().item()
+        print(title_color + name + " biases (min=" + repr(min) + ", max=" + repr(max) + ")" + Color.END)
+        if print_data:
+            print(data_color + repr(biases) + Color.END)
 
     print()
 
@@ -129,17 +130,27 @@ def print_bn(bn):
     print("Training: " + repr(bn.training))
 
 
+def format_float(value, max_decimals=5):
+    return ("{0:." + repr(max_decimals) + "f}").format(value).rstrip('0').rstrip('.')
+
+
 def print_quantization_epoch(qepoch, max_epoch, percent):
     print("Quantization epoch " + Color.BOLD + Color.GREEN + repr(qepoch + 1) + "/" + repr(max_epoch) + Color.END
-          + " - Will quantize " + Color.BOLD + Color.GREEN + "{0:.5f}".format(percent).rstrip('0').rstrip('.') + '%' + Color.END + " of the weights as fibonacci")
+          + " - Will quantize " + Color.BOLD + Color.GREEN + format_float(percent) + '%' + Color.END + " of the weights as fibonacci")
 
 
 def print_fib_info(weighted_proportion, unweighted_proportion, weighted_distance, unweighted_distance):
     print("Proportion of fib weights: " +
-          '{0:.2f}'.format(weighted_proportion * 100).rstrip('0').rstrip('.') + '%')
+          format_float(weighted_proportion * 100, max_decimals=2) + '%')
     print("Average proportion of fib weights over equally important layers: " +
-          '{0:.2f}'.format(unweighted_proportion * 100).rstrip('0').rstrip('.') + '%')
+          format_float(unweighted_proportion * 100, max_decimals=2) + '%')
     print("Average distance to fib weights: " +
-          '{0:.3f}'.format(weighted_distance).rstrip('0').rstrip('.'))
+          format_float(weighted_distance, max_decimals=3))
     print("Average average distance to fib weights over equally important layers: " +
-          '{0:.3f}'.format(unweighted_distance).rstrip('0').rstrip('.'))
+          format_float(unweighted_distance, max_decimals=3))
+
+
+def print_quantization(fib, proportions, step, bits, layer_idx, num_layers, layer_type, persistent=False):
+    print("\rQuantizing model (" + ("fib " + format_float(proportions[step] * 100) + '%' if fib else "no fib") + ", {0} bits)".format(bits) +
+          " - Layer [{0}/{1}] ({2})".format(layer_idx + 1, num_layers, layer_type.__name__)
+          , end='\n' if persistent else '')

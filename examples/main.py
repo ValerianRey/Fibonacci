@@ -1,12 +1,9 @@
 import os
 import random
-import shutil
-import warnings
 from types import SimpleNamespace
 
 import examples.mnist_models as mnist_models
 import examples.cifar10_models as cifar10_models
-from examples.print_util import *
 import torch.backends.cudnn as cudnn
 import torch.nn.parallel
 import torch.optim
@@ -17,11 +14,12 @@ import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 from inq.stats import *
-from inq.quantization import *
+from inq.quantizer import *
 from examples.metrics import *
 from examples.dpn import *
 from examples.preact_resnet import *
 from os import path
+from inq.retraining import *
 
 import inq
 
@@ -29,27 +27,27 @@ settings_dict = {
     'dataset': 'cifar10',  # 'mnist', 'cifar10'
     'arch': 'PARN18_nores',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
     'workers': 4,  # Increasing that seems to require A LOT of RAM memory (default was 8)
-    'epochs': 4,
-    'retrain_epochs': 5,
+    'epochs': 100,
+    'retrain_epochs': 4,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
-    'val_batch_size': 1048,  # Keep that low to have enough GPU memory for scaling validation
+    'val_batch_size': 256,  # Keep that low to have enough GPU memory for scaling validation
     'stats_batch_size': 1000,  # This should be a divider of the dataset size
-    'lr': 0.05,  # Learning rate, default was 0.001
+    'lr': 0.1,  # Learning rate, default was 0.001
     'lr_retrain': 0.05,
     'gamma': 0.92,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7, 0.95 for cifar10 is good
-    'gamma_retrain': 0.5,
+    'gamma_retrain': 0.75,
     'momentum': 0.9,  # Gradient momentum, default was 0.9
     'momentum_retrain': 0.5,
     'weight_decay': 0.0005,  # L2 regularization parameter, default was 0.0005
     'weight_decay_retrain': 0.0005,
     'print_interval': 1,
-    'val_interval': 4,  # Use a large value if you want to avoid wasting time computing the test accuracy and printing it.
+    'val_interval': 5,  # Use a large value if you want to avoid wasting time computing the test accuracy and printing it.
     'seed': None,  # default: None
     'quantize': True,
     'strategy': 'reverse_quantile',
     'weight_bits': 8,
-    'iterative_steps': [0.3, 0.5, 0.7, 0.9, 1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
+    'iterative_steps': [0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
     'log_dir': "logs/",
     'tensorboard': False,
     'pretrain': False,
@@ -170,6 +168,7 @@ def main_worker(args, shuffle=True):
         }, filename=model_path)
 
     stats = load_or_gather_stats(model, train_stats_loader, args.load_stats, saves_path)
+
     if args.load_qmodel_fib:
         if os.path.isfile(qmodel_fib_path):
             # Here we compute the qmodel from
@@ -198,12 +197,12 @@ def main_worker(args, shuffle=True):
             if qepoch == 0:  # The int quantized qmodel is only produced once
                 validate(val_loader, model, criterion, args, title='Test original network')
                 qmodel_int = compute_qmodel(model, stats, optimizer, dummy_datapoint, bits=args.weight_bits, fib=False)
-                # print_seq_model(qmodel_int, how='long')
                 validate(val_loader, qmodel_int, criterion, args, quantized=True, fib=False, title='Test int')
                 qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=args.iterative_steps, step=0, bits=args.weight_bits, fib=True, strategy=args.strategy)
             else:
                 increase_fib_proportion(qmodel_fib, optimizer, args.weight_bits, args.iterative_steps, qepoch, strategy=args.strategy)
 
+            precompute_constants(qmodel_fib, dummy_datapoint)
             title = 'Test ' + '{0:.5f}'.format(args.iterative_steps[qepoch] * 100).rstrip('0').rstrip('.') + '% fib'
             validate(val_loader, qmodel_fib, criterion, args, quantized=True, fib=True, title=title)
 
@@ -224,10 +223,10 @@ def main_worker(args, shuffle=True):
             precompute_constants(qmodel_fib, dummy_datapoint)
             title = title + ' retrained'
             validate(val_loader, qmodel_fib, criterion, args, quantized=True, fib=True, title=title)
-            print_fib_info(average_proportion_fib(qmodel_fib, weighted=True),
-                           average_proportion_fib(qmodel_fib, weighted=False),
-                           average_distance_fib(qmodel_fib, weighted=True),
-                           average_distance_fib(qmodel_fib, weighted=False))
+            # print_fib_info(average_proportion_fib(qmodel_fib, weighted=True),
+            #                average_proportion_fib(qmodel_fib, weighted=False),
+            #                average_distance_fib(qmodel_fib, weighted=True),
+            #                average_distance_fib(qmodel_fib, weighted=False))
             # print_seq_model(qmodel_fib, how='short')
 
         save_checkpoint({
@@ -307,7 +306,6 @@ def validate(val_loader, model, criterion, args, quantized=False, fib=False, tit
             # compute output
             if quantized:
                 data = data.cuda()
-                print(data.shape)
                 output = qmodel_forward(model, data)
             else:
                 output = model(data)
