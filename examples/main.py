@@ -28,7 +28,7 @@ settings_dict = {
     'arch': 'PARN18_nores',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
     'workers': 4,  # Increasing that seems to require A LOT of RAM memory (default was 8)
     'epochs': 100,
-    'retrain_epochs': 4,
+    'retrain_epochs': 10,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
     'val_batch_size': 256,  # Keep that low to have enough GPU memory for scaling validation
@@ -47,7 +47,7 @@ settings_dict = {
     'quantize': True,
     'strategy': 'reverse_quantile',
     'weight_bits': 8,
-    'iterative_steps': [0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
+    'iterative_steps': [1.],  #[0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
     'log_dir': "logs/",
     'tensorboard': False,
     'pretrain': False,
