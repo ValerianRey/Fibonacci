@@ -9,13 +9,13 @@ import copy
 ACC_BITS = 32
 
 
-def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, step=None, bits=8, fib=False, strategy='quantile'):
+def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, step=None, bits=8, fib=False, strategy='quantile', scheme='per_out_channel'):
     # Copy the model into qmodel (and its device)
     qmodel = copy.deepcopy(model)
 
     # Choose which stat to use
-    low_key = 'min'
-    high_key = 'max'
+    low_key = 'avg_min'
+    high_key = 'avg_max'
 
     layers_to_quantize = []
     stat_names = []
@@ -69,8 +69,9 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
                 scale_x_next, zp_x_next = torch.tensor(1.0), torch.tensor(0)
             else:
                 scale_x_next, zp_x_next = calc_scale_zero_point(low_val=stats[name][low_key], high_val=stats[name][high_key], bits=bits, fib=False)
+
             q_w, q_b, shifts, mults, zps_w, scales_w, scale_x, combined_scales, Ts = \
-                compute_quantized_layer(layer, scale_x, scale_x_next, proportions=proportions, step=step, bits=bits, fib=fib, strategy=strategy)  # fib=(fib and fib_layer)
+                compute_quantized_layer(layer, scale_x, scale_x_next, proportions=proportions, step=step, bits=bits, fib=fib, strategy=strategy, scheme=scheme)
 
             optimizer.param_groups[0]['Ts'][param_idx] = Ts
             layer.weight.data = q_w
@@ -97,10 +98,11 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
             if type(layer) in supported_modules:
                 if type(layer) == nn.Conv2d:
                     # The kernels are identical along the layer.in_channels axis, that could be made more efficiently
-                    layer.zp_w_kernel = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
+                    zp_out_channels = layer.out_channels if scheme == 'per_out_channel' else 1
+                    layer.zp_w_kernel = nn.Conv2d(layer.in_channels, zp_out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                                   dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
 
-                    for out_channel in range(layer.out_channels):
+                    for out_channel in range(zp_out_channels):
                         layer.zp_w_kernel.weight.data[out_channel].fill_(zps_w[out_channel])
 
                     layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()
@@ -128,15 +130,19 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
     return qmodel
 
 
-def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step=None, bits=8, fib=False, strategy='quantile'):
+def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step=None, bits=8, fib=False, strategy='quantile', scheme='per_out_channel'):
     if not type(layer) in supported_modules:
         raise TypeError("compute_quantized_layer not implemented for layer of type {}".format(type(layer).__name__))
 
     if type(layer) == nn.Linear:
         low_vals_w, high_vals_w = layer.weight.data.min().unsqueeze(0), layer.weight.data.max().unsqueeze(0)
-    elif type(layer) == nn.Conv2d:
-        low_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.min)
-        high_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.max)
+    else:
+        if scheme == 'per_out_channel':
+            low_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.min)
+            high_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.max)
+        else:
+            low_vals_w = layer.weight.data.min().unsqueeze(0).expand(layer.out_channels)  # Still expand to match the number of out_channels
+            high_vals_w = layer.weight.data.max().unsqueeze(0).expand(layer.out_channels)
 
     scales_w, zps_w = calc_scales_zero_points(low_vals_w, high_vals_w, bits=bits, fib=fib)
     if type(layer) == nn.Conv2d:

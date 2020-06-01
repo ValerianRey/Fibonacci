@@ -24,7 +24,7 @@ def calc_scale_zero_point(low_val, high_val, bits=8, fib=False):
     else:
         scale = (high_val - low_val) / (qmax - qmin)
 
-    zp = torch.round((qmin - low_val / scale))
+    zp = torch.round((qmin - low_val / scale)).to(torch.int)
     # The need to clamp zp depends on how we handle it. For example in a linear layer zp_w is only multiplied once, so it depends on what
     # piece of hardware we use to make that multiplication (is it important to have it on uint8, or is int32 ok, or even float32?)
     # For a conv layer, more multiplications of zp_w are required, so it might be interesting in the future to fibonacci encode the zp_w_kernel
@@ -42,7 +42,7 @@ def calc_scale_zero_point(low_val, high_val, bits=8, fib=False):
 
 def calc_scales_zero_points(low_vals, high_vals, bits=8, fib=False):
     scales = torch.ones_like(low_vals)
-    zps = torch.zeros_like(low_vals)
+    zps = torch.zeros_like(low_vals, dtype=torch.int)
 
     for i, (low_val, high_val) in enumerate(zip(low_vals, high_vals)):
         scale, zp = calc_scale_zero_point(low_val, high_val, bits=bits, fib=fib)
@@ -67,8 +67,8 @@ def get_mult_shift(val, mult_bits=8, shift_bits=32):
 
 
 def get_mults_shifts(vals, mult_bits=8, shift_bits=32):
-    best_mults = torch.ones_like(vals)
-    best_shifts = torch.zeros_like(vals)
+    best_mults = torch.ones_like(vals, dtype=torch.int)
+    best_shifts = torch.zeros_like(vals, dtype=torch.int)
 
     for i, val in enumerate(vals):
         best_mult, best_shift = get_mult_shift(val, mult_bits=mult_bits, shift_bits=shift_bits)

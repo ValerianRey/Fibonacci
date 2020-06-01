@@ -27,14 +27,14 @@ settings_dict = {
     'dataset': 'cifar10',  # 'mnist', 'cifar10'
     'arch': 'PARN18_nores',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
     'workers': 4,  # Increasing that seems to require A LOT of RAM memory (default was 8)
-    'epochs': 100,
-    'retrain_epochs': 10,
+    'epochs': 10,
+    'retrain_epochs': 4,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
     'val_batch_size': 256,  # Keep that low to have enough GPU memory for scaling validation
     'stats_batch_size': 1000,  # This should be a divider of the dataset size
-    'lr': 0.1,  # Learning rate, default was 0.001
-    'lr_retrain': 0.05,
+    'lr': 0.01,  # Learning rate, default was 0.001
+    'lr_retrain': 0.01,
     'gamma': 0.92,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7, 0.95 for cifar10 is good
     'gamma_retrain': 0.75,
     'momentum': 0.9,  # Gradient momentum, default was 0.9
@@ -45,9 +45,10 @@ settings_dict = {
     'val_interval': 5,  # Use a large value if you want to avoid wasting time computing the test accuracy and printing it.
     'seed': None,  # default: None
     'quantize': True,
-    'strategy': 'reverse_quantile',
+    'strategy': 'reverse_quantile',  # quantile, reverse_quantile, random
+    'scheme': 'per_layer',  # per_layer, per_out_channel
     'weight_bits': 8,
-    'iterative_steps': [1.],  #[0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
+    'iterative_steps': [1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
     'log_dir': "logs/",
     'tensorboard': False,
     'pretrain': False,
@@ -89,6 +90,8 @@ def main_worker(args, shuffle=True):
             model = mnist_models.Net(non_linearity=nn.Tanh).cuda()
         elif args.arch == 'Net_2':
             model = mnist_models.Net(non_linearity=nn.ReLU).cuda()
+        elif args.arch == 'NetNoPool':
+            model = mnist_models.NetNoPool(non_linearity=nn.ReLU).cuda()
 
     elif args.dataset == 'cifar10':
         transform = transforms.Compose(
@@ -155,7 +158,7 @@ def main_worker(args, shuffle=True):
             train(train_loader, model, criterion, optimizer, epoch, args)
             scheduler.step()
             # evaluate on validation set
-            if epoch % args.val_interval == 0:
+            if (epoch+1) % args.val_interval == 0:
                 validate(val_loader, model, criterion, args, title='Test unscaled')
 
         # Create the directory if it does not exist yet, and then save the learned model
@@ -173,7 +176,8 @@ def main_worker(args, shuffle=True):
         if os.path.isfile(qmodel_fib_path):
             # Here we compute the qmodel from
             print("Computing qmodel from model to be able to copy the save into it")  # TODO: need to improve on that by defining a constructor for empty qmodel
-            qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=args.iterative_steps, step=0, bits=args.weight_bits, fib=True, strategy=args.strategy)
+            qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=args.iterative_steps, step=0,
+                                        bits=args.weight_bits, fib=True, strategy=args.strategy, scheme=args.scheme)
             print("Loading checkpoint '{}'".format(qmodel_fib_path))
             checkpoint = torch.load(qmodel_fib_path)
             qmodel_fib.load_state_dict(checkpoint['state_dict'])
@@ -196,9 +200,10 @@ def main_worker(args, shuffle=True):
             print_header(color=Color.UNDERLINE)
             if qepoch == 0:  # The int quantized qmodel is only produced once
                 validate(val_loader, model, criterion, args, title='Test original network')
-                qmodel_int = compute_qmodel(model, stats, optimizer, dummy_datapoint, bits=args.weight_bits, fib=False)
+                qmodel_int = compute_qmodel(model, stats, optimizer, dummy_datapoint, bits=args.weight_bits, fib=False, scheme=args.scheme)
                 validate(val_loader, qmodel_int, criterion, args, quantized=True, fib=False, title='Test int')
-                qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=args.iterative_steps, step=0, bits=args.weight_bits, fib=True, strategy=args.strategy)
+                qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=args.iterative_steps, step=0,
+                                            bits=args.weight_bits, fib=True, strategy=args.strategy, scheme=args.scheme)
             else:
                 increase_fib_proportion(qmodel_fib, optimizer, args.weight_bits, args.iterative_steps, qepoch, strategy=args.strategy)
 
@@ -211,12 +216,13 @@ def main_worker(args, shuffle=True):
             optimizer.reset_lr(args.lr_retrain)
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma_retrain)
             optimizer.reset_momentum()
+            validate(val_loader, model, criterion, args, title='Test unscaled')
             for epoch in range(args.start_epoch, args.retrain_epochs):
                 # train for one epoch
                 train(train_loader, model, criterion, optimizer, epoch, args, retrain=True)
                 scheduler.step()
                 # evaluate on validation set
-                if epoch % args.val_interval == 0:
+                if (epoch+1) % args.val_interval == 0:
                     validate(val_loader, model, criterion, args, title='Test unscaled')
 
             update_qmodel(qmodel_fib, model)
@@ -307,10 +313,10 @@ def validate(val_loader, model, criterion, args, quantized=False, fib=False, tit
             if quantized:
                 data = data.cuda()
                 output = qmodel_forward(model, data)
+                loss = torch.tensor(-1)
             else:
                 output = model(data)
-
-            loss = criterion(output, target)
+                loss = criterion(output, target)
 
             # measure accuracy and record loss
             acc1 = accuracy(output, target, topk=(1,))[0]

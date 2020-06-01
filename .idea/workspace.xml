@@ -20,8 +20,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="923697de-4a50-472e-a7d4-61c6f992d465" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/examples/rounding.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Fibonacci.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/Fibonacci.ipynb" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/examples/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/mnist_models.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/mnist_models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/inq/qforward.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/qforward.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/inq/quantization_util.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/quantization_util.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/inq/quantizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/quantizer.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -296,6 +302,10 @@
       <workItem from="1590742219372" duration="7930000" />
       <workItem from="1590756381923" duration="26437000" />
       <workItem from="1590833834623" duration="41279000" />
+      <workItem from="1590920421662" duration="16670000" />
+      <workItem from="1591018193598" duration="14747000" />
+      <workItem from="1591048483011" duration="85000" />
+      <workItem from="1591049836543" duration="1974000" />
     </task>
     <servers />
   </component>
@@ -357,37 +367,37 @@
       <screen x="0" y="0" width="1600" height="864" />
     </state>
     <state x="0" y="0" key="FileDocumentManager.FileCacheConflict/0.0.1600.864@0.0.1600.864" timestamp="1585223319139" />
-    <state width="1493" height="215" key="GridCell.Tab.0.bottom" timestamp="1590886349811">
+    <state width="1493" height="246" key="GridCell.Tab.0.bottom" timestamp="1591051381197">
       <screen x="0" y="0" width="1536" height="824" />
     </state>
-    <state width="1493" height="215" key="GridCell.Tab.0.bottom/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1590886349811" />
+    <state width="1493" height="246" key="GridCell.Tab.0.bottom/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1591051381197" />
     <state width="1877" height="328" key="GridCell.Tab.0.bottom/0.0.1536.824/3840.0.1920.1200@3840.0.1920.1200" timestamp="1590797603758" />
     <state width="1557" height="255" key="GridCell.Tab.0.bottom/0.0.1600.864@0.0.1600.864" timestamp="1590127498160" />
     <state width="1877" height="328" key="GridCell.Tab.0.bottom/0.0.1707.920/2560.0.1920.1200@2560.0.1920.1200" timestamp="1590796088880" />
     <state width="1920" height="1007" key="GridCell.Tab.0.bottom/3200.289.1920.1008/0.0.1600.864@0.0.1600.864" timestamp="1590416308367" />
     <state width="1876" height="689" key="GridCell.Tab.0.bottom/3200.289.1920.1008/0.0.1600.864@3200.289.1920.1008" timestamp="1590320055512" />
-    <state width="1493" height="215" key="GridCell.Tab.0.center" timestamp="1590886349811">
+    <state width="1493" height="246" key="GridCell.Tab.0.center" timestamp="1591051381197">
       <screen x="0" y="0" width="1536" height="824" />
     </state>
-    <state width="1493" height="215" key="GridCell.Tab.0.center/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1590886349811" />
+    <state width="1493" height="246" key="GridCell.Tab.0.center/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1591051381197" />
     <state width="1877" height="328" key="GridCell.Tab.0.center/0.0.1536.824/3840.0.1920.1200@3840.0.1920.1200" timestamp="1590797603758" />
     <state width="1557" height="255" key="GridCell.Tab.0.center/0.0.1600.864@0.0.1600.864" timestamp="1590127498160" />
     <state width="1877" height="328" key="GridCell.Tab.0.center/0.0.1707.920/2560.0.1920.1200@2560.0.1920.1200" timestamp="1590796088880" />
     <state width="1920" height="1007" key="GridCell.Tab.0.center/3200.289.1920.1008/0.0.1600.864@0.0.1600.864" timestamp="1590416308367" />
     <state width="1876" height="689" key="GridCell.Tab.0.center/3200.289.1920.1008/0.0.1600.864@3200.289.1920.1008" timestamp="1590320055512" />
-    <state width="1493" height="215" key="GridCell.Tab.0.left" timestamp="1590886349811">
+    <state width="1493" height="246" key="GridCell.Tab.0.left" timestamp="1591051381197">
       <screen x="0" y="0" width="1536" height="824" />
     </state>
-    <state width="1493" height="215" key="GridCell.Tab.0.left/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1590886349811" />
+    <state width="1493" height="246" key="GridCell.Tab.0.left/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1591051381197" />
     <state width="1877" height="328" key="GridCell.Tab.0.left/0.0.1536.824/3840.0.1920.1200@3840.0.1920.1200" timestamp="1590797603758" />
     <state width="1557" height="255" key="GridCell.Tab.0.left/0.0.1600.864@0.0.1600.864" timestamp="1590127498160" />
     <state width="1877" height="328" key="GridCell.Tab.0.left/0.0.1707.920/2560.0.1920.1200@2560.0.1920.1200" timestamp="1590796088879" />
     <state width="1920" height="1007" key="GridCell.Tab.0.left/3200.289.1920.1008/0.0.1600.864@0.0.1600.864" timestamp="1590416308367" />
     <state width="1876" height="689" key="GridCell.Tab.0.left/3200.289.1920.1008/0.0.1600.864@3200.289.1920.1008" timestamp="1590320055512" />
-    <state width="1493" height="215" key="GridCell.Tab.0.right" timestamp="1590886349811">
+    <state width="1493" height="246" key="GridCell.Tab.0.right" timestamp="1591051381197">
       <screen x="0" y="0" width="1536" height="824" />
     </state>
-    <state width="1493" height="215" key="GridCell.Tab.0.right/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1590886349811" />
+    <state width="1493" height="246" key="GridCell.Tab.0.right/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1591051381197" />
     <state width="1877" height="328" key="GridCell.Tab.0.right/0.0.1536.824/3840.0.1920.1200@3840.0.1920.1200" timestamp="1590797603758" />
     <state width="1557" height="255" key="GridCell.Tab.0.right/0.0.1600.864@0.0.1600.864" timestamp="1590127498160" />
     <state width="1877" height="328" key="GridCell.Tab.0.right/0.0.1707.920/2560.0.1920.1200@2560.0.1920.1200" timestamp="1590796088880" />
@@ -428,20 +438,20 @@
     <state x="584" y="330" key="com.intellij.openapi.vcs.update.UpdateOrStatusOptionsDialogupdate-v2/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1590785202051" />
     <state x="608" y="346" key="com.intellij.openapi.vcs.update.UpdateOrStatusOptionsDialogupdate-v2/0.0.1600.864@0.0.1600.864" timestamp="1589427539410" />
     <state x="3930" y="693" key="com.intellij.openapi.vcs.update.UpdateOrStatusOptionsDialogupdate-v2/3200.289.1920.1008/0.0.1600.864@3200.289.1920.1008" timestamp="1590319713943" />
-    <state x="598" y="173" width="850" height="558" key="find.popup" timestamp="1590878929010">
+    <state x="598" y="173" width="850" height="558" key="find.popup" timestamp="1591050623896">
       <screen x="0" y="0" width="1536" height="824" />
     </state>
-    <state x="598" y="173" width="850" height="558" key="find.popup/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1590878929010" />
+    <state x="598" y="173" width="850" height="558" key="find.popup/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1591050623896" />
     <state x="493" y="163" width="885" height="554" key="find.popup/0.0.1600.864@0.0.1600.864" timestamp="1590123082359" />
-    <state x="451" y="173" width="672" height="647" key="search.everywhere.popup" timestamp="1590863799393">
+    <state x="451" y="173" width="672" height="647" key="search.everywhere.popup" timestamp="1591031641908">
       <screen x="0" y="0" width="1536" height="824" />
     </state>
-    <state x="451" y="173" width="672" height="647" key="search.everywhere.popup/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1590863799393" />
+    <state x="451" y="173" width="672" height="647" key="search.everywhere.popup/0.0.1536.824/3840.0.1920.1200@0.0.1536.824" timestamp="1591031641908" />
     <state x="470" y="181" width="672" height="678" key="search.everywhere.popup/0.0.1600.864@0.0.1600.864" timestamp="1590043220371" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/fibonaci_coding$mnist_quantized.coverage" NAME="main Coverage Results" MODIFIED="1589371562903" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
-    <SUITE FILE_PATH="coverage/fibonaci_coding$main.coverage" NAME="main Coverage Results" MODIFIED="1590885142534" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/fibonaci_coding$main.coverage" NAME="main Coverage Results" MODIFIED="1591051381190" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$imagenet_quantized_fib.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1583347018090" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$pytest_in_mnist_py.coverage" NAME="pytest in mnist.py Coverage Results" MODIFIED="1583336133510" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
     <SUITE FILE_PATH="coverage/INQ_pytorch_master$mnist_quantized.coverage" NAME="mnist_quantized Coverage Results" MODIFIED="1583963695998" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
