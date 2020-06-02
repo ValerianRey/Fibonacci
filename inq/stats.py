@@ -57,7 +57,6 @@ def gather_stats(model, loader):
         final_stats[key] = {"avg_max": (value["max_sum"] / value["samples"]), "avg_min": (value["min_sum"] / value["samples"]),
                             "max": value["max"], "min": value["min"]}
 
-    # print("Gathering completed")
     return final_stats
 
 
