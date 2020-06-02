@@ -7,7 +7,7 @@ def qmodel_forward(qmodel, x, computing_constants=False):
     if computing_constants:
         constants = []
     # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
-    print_clamped_values = False and not computing_constants  # Never print the clamped values when collecting stats
+    print_clamped_values = True and not computing_constants  # Never print the clamped values when collecting stats
     if print_clamped_values:
         print()
 

@@ -56,7 +56,7 @@ def pre_act_bottleneck(in_planes, planes, affine_batch_norm, stride=1):
 
 
 class PreActResNet(nn.Module):
-    def __init__(self, block, expansion, num_blocks, affine_batch_norm, num_classes=10):
+    def __init__(self, block, expansion, num_blocks, affine_batch_norm, pooling, num_classes=10):
         super(PreActResNet, self).__init__()
         self.in_planes = 64
         self.seq = nn.Sequential(
@@ -65,7 +65,7 @@ class PreActResNet(nn.Module):
             *self._make_layer(block, expansion, 128, num_blocks[1], affine_batch_norm, stride=2),
             *self._make_layer(block, expansion, 256, num_blocks[2], affine_batch_norm, stride=2),
             *self._make_layer(block, expansion, 512, num_blocks[3], affine_batch_norm, stride=2),
-            nn.AvgPool2d(4),
+            pooling(4),
             nn.Flatten(),
             nn.Linear(512 * expansion, num_classes)
         )
@@ -82,17 +82,17 @@ class PreActResNet(nn.Module):
         return self.seq(x)
 
 
-def parn(depth=18, affine_batch_norm=True):
+def parn(depth=18, affine_batch_norm=True, pooling=nn.AvgPool2d):
     if depth == 18:
-        return PreActResNet(pre_act_block, 1, [2, 2, 2, 2], affine_batch_norm)
+        return PreActResNet(pre_act_block, 1, [2, 2, 2, 2], affine_batch_norm, pooling)
     elif depth == 34:
-        return PreActResNet(pre_act_block, 1, [3, 4, 6, 3], affine_batch_norm)
+        return PreActResNet(pre_act_block, 1, [3, 4, 6, 3], affine_batch_norm, pooling)
     elif depth == 50:
-        return PreActResNet(pre_act_bottleneck, 4, [3, 4, 6, 3], affine_batch_norm)
+        return PreActResNet(pre_act_bottleneck, 4, [3, 4, 6, 3], affine_batch_norm, pooling)
     elif depth == 101:
-        return PreActResNet(pre_act_bottleneck, 4, [3, 4, 23, 3], affine_batch_norm)
+        return PreActResNet(pre_act_bottleneck, 4, [3, 4, 23, 3], affine_batch_norm, pooling)
     elif depth == 152:
-        return PreActResNet(pre_act_bottleneck, 4, [3, 8, 36, 3], affine_batch_norm)
+        return PreActResNet(pre_act_bottleneck, 4, [3, 8, 36, 3], affine_batch_norm, pooling)
     else:
         raise ValueError("Depth {} not supported. Use 18, 34, 50, 101 or 152.".format(depth))
 

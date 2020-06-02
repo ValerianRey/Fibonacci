@@ -14,8 +14,8 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
     qmodel = copy.deepcopy(model)
 
     # Choose which stat to use
-    low_key = 'avg_min'
-    high_key = 'avg_max'
+    low_key = 'min'
+    high_key = 'max'
 
     layers_to_quantize = []
     stat_names = []

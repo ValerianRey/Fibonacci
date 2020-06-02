@@ -25,18 +25,18 @@ import inq
 
 settings_dict = {
     'dataset': 'cifar10',  # 'mnist', 'cifar10'
-    'arch': 'PARN18_nores',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'DPN26' (very slow), 'DPN92' (giga slow), 'PARN18', 'PARN18_nores'
+    'arch': 'PARN18_nores_maxpool',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'PARN18', 'PARN18_nores', 'PARN18_nores_maxpool'
     'workers': 4,  # Increasing that seems to require A LOT of RAM memory (default was 8)
-    'epochs': 10,
-    'retrain_epochs': 4,
+    'epochs': 100,
+    'retrain_epochs': 16,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
     'val_batch_size': 256,  # Keep that low to have enough GPU memory for scaling validation
     'stats_batch_size': 1000,  # This should be a divider of the dataset size
     'lr': 0.01,  # Learning rate, default was 0.001
     'lr_retrain': 0.01,
-    'gamma': 0.92,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7, 0.95 for cifar10 is good
-    'gamma_retrain': 0.75,
+    'gamma': 0.97,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7, 0.95 for cifar10 is good
+    'gamma_retrain': 0.85,
     'momentum': 0.9,  # Gradient momentum, default was 0.9
     'momentum_retrain': 0.5,
     'weight_decay': 0.0005,  # L2 regularization parameter, default was 0.0005
@@ -48,7 +48,7 @@ settings_dict = {
     'strategy': 'reverse_quantile',  # quantile, reverse_quantile, random
     'scheme': 'per_layer',  # per_layer, per_out_channel
     'weight_bits': 8,
-    'iterative_steps': [1.0],  # [0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.88, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.985, 0.99, 0.993, 0.995, 0.998, 0.999, 1.0],  # np.arange(0.4, 1.0, 0.03).tolist() + [0.994, 0.997, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0],  # [0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995, 0.998, 0.999, 0.9995, 0.9998, 0.9999, 1.0],
+    'iterative_steps': [0.1, 0.3, 0.5, 0.7, 1.0],
     'log_dir': "logs/",
     'tensorboard': False,
     'pretrain': False,
@@ -88,8 +88,6 @@ def main_worker(args, shuffle=True):
             model = mnist_models.Net(non_linearity=nn.Sigmoid).cuda()
         elif args.arch == 'Net_tanh':
             model = mnist_models.Net(non_linearity=nn.Tanh).cuda()
-        elif args.arch == 'Net_2':
-            model = mnist_models.Net(non_linearity=nn.ReLU).cuda()
         elif args.arch == 'NetNoPool':
             model = mnist_models.NetNoPool(non_linearity=nn.ReLU).cuda()
 
@@ -99,18 +97,16 @@ def main_worker(args, shuffle=True):
              transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
         train_dataset = datasets.CIFAR10('CIFAR10', train=True, download=True, transform=transform)
         val_dataset = datasets.CIFAR10('CIFAR10', train=False, download=True, transform=transform)
-        if args.arch == 'LeNet' or args.arch == 'LeNet2':
+        if args.arch == 'LeNet':
             model = cifar10_models.LeNet(dropout=False).cuda()
         if args.arch == 'LeNetDropout':
             model = cifar10_models.LeNet(dropout=True).cuda()
-        if args.arch == 'DPN92':
-            model = DPN92().cuda()
-        if args.arch == 'DPN26':
-            model = DPN26().cuda()
         if args.arch == 'PARN18':
             model = PreActResNet18().cuda()
         if args.arch == 'PARN18_nores':
             model = cifar10_models.parn(depth=18).cuda()
+        if args.arch == 'PARN18_nores_maxpool':
+            model = cifar10_models.parn(depth=18, pooling=nn.MaxPool2d).cuda()
         if args.arch == 'PARN18_nores_noaffine':
             model = cifar10_models.parn(depth=18, affine_batch_norm=False).cuda()
 
@@ -250,7 +246,7 @@ def main_worker(args, shuffle=True):
         writer.close()
 
     # Print all the parameters of the neural network to get an idea of how the weights are quantized
-    print_seq_model(qmodel_fib, how='short')
+    # print_seq_model(qmodel_fib, how='no')
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args, retrain=False):
