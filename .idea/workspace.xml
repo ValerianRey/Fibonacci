@@ -21,10 +21,6 @@
   <component name="ChangeListManager">
     <list default="true" id="923697de-4a50-472e-a7d4-61c6f992d465" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/cifar10_models.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/cifar10_models.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/examples/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/inq/qforward.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/qforward.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/inq/quantizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/inq/quantizer.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -306,6 +302,7 @@
       <workItem from="1591061742881" duration="12000" />
       <workItem from="1591106772185" duration="18154000" />
       <workItem from="1591131758425" duration="1031000" />
+      <workItem from="1591133239221" duration="835000" />
     </task>
     <servers />
   </component>
