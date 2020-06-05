@@ -45,15 +45,15 @@ settings_dict = {
     'val_interval': 5,  # Use a large value if you want to avoid wasting time computing the test accuracy and printing it.
     'seed': None,  # default: None
     'quantize': True,
-    'strategy': 'reverse_quantile',  # quantile, reverse_quantile, random
+    'strategy': 'random',  # quantile, reverse_quantile, random
     'scheme': 'per_layer',  # per_layer, per_out_channel
     'weight_bits': 8,
-    'iterative_steps': [0.1, 0.3, 0.5, 0.7, 1.0],
+    'iterative_steps': [0.2, 0.4, 0.6, 0.8, 1.0],
     'log_dir': "logs/",
     'tensorboard': False,
     'pretrain': False,
     'load_model': True,
-    'load_stats': True,  # Be very careful to recompute the stats when the quantization scheme changes
+    'load_stats': True,
     'load_qmodel_fib': False
 }
 

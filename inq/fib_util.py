@@ -19,7 +19,7 @@ def fib_code_int_down(num, bits=8):
         if code[i] == '1':
             count += 1
             if count >= 2:
-                code[i] = '0' # Remove the problem
+                code[i] = '0'  # Remove the problem
                 # Then we need to make the number as big as possible by placing only 10101010101... until the end of the floating point representation
                 one_next = True
                 for j in range(i+1, len(code)):

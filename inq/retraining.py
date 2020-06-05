@@ -54,12 +54,3 @@ def update_qmodel(qmodel, model):
                     layer.register_parameter('shifts', torch.nn.Parameter(data=shifts, requires_grad=False))
                     layer.register_parameter('mults', torch.nn.Parameter(data=mults, requires_grad=False))
 
-
-# Freeze the batch norm layers so that they stay constant
-# This should be used before retraining so that retraining does not change the batch norm layer
-# so we don't have to update the combined scales at each layer and the constant
-def freeze_bn(model):
-    for layer in model.seq:
-        if type(layer) in batch_norm_modules:
-            layer.requires_grad = False
-

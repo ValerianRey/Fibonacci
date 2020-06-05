@@ -7,7 +7,7 @@ def qmodel_forward(qmodel, x, computing_constants=False):
     if computing_constants:
         constants = []
     # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
-    print_clamped_values = True and not computing_constants  # Never print the clamped values when collecting stats
+    print_clamped_values = False and not computing_constants  # Never print the clamped values when collecting stats
     if print_clamped_values:
         print()
 
@@ -40,7 +40,7 @@ def qlayer_forward(q_x, layer, computing_constant=False):
     if not type(layer) in supported_modules:
         raise TypeError("qlayer_forward not implemented for layer of type {}".format(type(layer).__name__))
 
-    log = True
+    log = False
     if log and not computing_constant:
         print(Color.YELLOW + "x_min=" + repr(q_x.min().item()) + ", x_max=" + repr(q_x.max().item()) + Color.END)
 
@@ -72,6 +72,8 @@ def qlayer_forward(q_x, layer, computing_constant=False):
 
     if log and not computing_constant:
         print(Color.GRAY + 'result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()) + Color.END)
+
+    # POST-QUANTIZATION
 
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
     # We could use int instead of long for 8 bits (no risk of overflowing the int32 range)
