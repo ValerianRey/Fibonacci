@@ -9,7 +9,8 @@ import copy
 ACC_BITS = 32
 
 
-def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, step=None, bits=8, fib=False, strategy='quantile', scheme='per_out_channel'):
+def compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions=None, step=None, bits=8,
+                   fib=False, strategy='quantile', scheme='per_out_channel'):
     # Copy the model into qmodel (and its device)
     qmodel = copy.deepcopy(model)
 
@@ -23,7 +24,7 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
 
     # Compute the min and max value of the quantized activation (0 and 255 for example for 8 bits) and register them as parameters
     # Note that we use fib=False because the activations are not fib encoded
-    activation_qmin, activation_qmax = calc_qmin_qmax(bits=bits, negative=False, fib=False)
+    activation_qmin, activation_qmax = calc_qmin_qmax(device, bits=bits, negative=False, fib=False)
     qmodel.register_parameter('activation_qmin', nn.Parameter(activation_qmin, requires_grad=False))
     qmodel.register_parameter('activation_qmax', nn.Parameter(activation_qmax, requires_grad=False))
     with torch.no_grad():
@@ -42,7 +43,8 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
                         # The indices list is used to access the optimizer's parameters so we only increment idx
                         # if the parameter exists in the optimizer as well.
                         param_idx += 1
-                if len(layers_to_quantize) > 0:  # there is a shift of 1 in the name: for layer conv1 we use stats['conv2'] for example for the original MNIST net.
+                # there is a shift of 1 in the name: for layer conv1 we use stats['conv2'] for example for the original MNIST net.
+                if len(layers_to_quantize) > 0:
                     stat_names.append(repr(i))
                 layers_to_quantize.append(layer)
                 i += 1
@@ -57,21 +59,23 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
         qmodel.register_parameter('bits', nn.Parameter(data=torch.tensor(bits), requires_grad=False))
         qmodel.register_parameter('low_val_input', nn.Parameter(data=stats['0'][low_key], requires_grad=False))
         qmodel.register_parameter('high_val_input', nn.Parameter(data=stats['0'][high_key], requires_grad=False))
-        scale_x, zp_x = calc_scale_zero_point(low_val=qmodel.low_val_input, high_val=qmodel.high_val_input, bits=bits)
+        scale_x, zp_x = calc_scale_zero_point(qmodel.low_val_input, qmodel.high_val_input, device, bits=bits)
         qmodel.register_parameter('input_scale_x', nn.Parameter(data=scale_x, requires_grad=False))
         qmodel.register_parameter('input_zp_x', nn.Parameter(data=zp_x, requires_grad=False))
 
         assert(len(stat_names) == len(layers_to_quantize) and len(layers_to_quantize) == len(indices))
-        # for name, layer, fib_layer in zip(stat_names, layers, fib_layers):
+
         for layer_idx, (name, layer, param_idx) in enumerate(zip(stat_names, layers_to_quantize, indices)):
             print_quantization(fib, proportions, step, bits, layer_idx, len(layers_to_quantize), type(layer))
             if name == 'none':
-                scale_x_next, zp_x_next = torch.tensor(1.0), torch.tensor(0)
+                scale_x_next, zp_x_next = torch.tensor(1.0, device=device), torch.tensor(0, device=device)
             else:
-                scale_x_next, zp_x_next = calc_scale_zero_point(low_val=stats[name][low_key], high_val=stats[name][high_key], bits=bits, fib=False)
+                scale_x_next, zp_x_next = calc_scale_zero_point(stats[name][low_key], stats[name][high_key], device, bits=bits, fib=False)
 
             q_w, q_b, shifts, mults, zps_w, scales_w, scale_x, combined_scales, Ts = \
-                compute_quantized_layer(layer, scale_x, scale_x_next, proportions=proportions, step=step, bits=bits, fib=fib, strategy=strategy, scheme=scheme)
+                compute_quantized_layer(layer, scale_x, scale_x_next, device,
+                                        proportions=proportions, step=step, bits=bits,
+                                        fib=fib, strategy=strategy, scheme=scheme)
 
             optimizer.param_groups[0]['Ts'][param_idx] = Ts
             layer.weight.data = q_w
@@ -85,9 +89,9 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
             layer.register_parameter('scales_w', torch.nn.Parameter(data=scales_w, requires_grad=False))
             layer.register_parameter('scale_x_next', torch.nn.Parameter(data=scale_x_next, requires_grad=False))
             if name == 'none':
-                layer.register_parameter('shifts', torch.nn.Parameter(data=torch.tensor([0], device='cuda'), requires_grad=False))
-                layer.register_parameter('mults', torch.nn.Parameter(data=torch.tensor([1], device='cuda'), requires_grad=False))
-                layer.register_parameter('zp_x_next', torch.nn.Parameter(data=torch.tensor(0, device='cuda'), requires_grad=False))
+                layer.register_parameter('shifts', torch.nn.Parameter(data=torch.tensor([0], device=device), requires_grad=False))
+                layer.register_parameter('mults', torch.nn.Parameter(data=torch.tensor([1], device=device), requires_grad=False))
+                layer.register_parameter('zp_x_next', torch.nn.Parameter(data=torch.tensor(0, device=device), requires_grad=False))
                 layer.register_parameter('is_last', torch.nn.Parameter(data=torch.tensor(True), requires_grad=False))
             else:
                 layer.register_parameter('shifts', torch.nn.Parameter(data=shifts, requires_grad=False))
@@ -105,7 +109,7 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
                     for out_channel in range(zp_out_channels):
                         layer.zp_w_kernel.weight.data[out_channel].fill_(zps_w[out_channel])
 
-                    layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()
+                    layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.to(device)
                     layer.unbiased_layer = nn.Conv2d(layer.in_channels, layer.out_channels, layer.kernel_size, stride=layer.stride, padding=layer.padding,
                                                      dilation=layer.dilation, groups=layer.groups, bias=False, padding_mode=layer.padding_mode)
                     layer.unbiased_layer.weight.data = layer.weight.data
@@ -113,7 +117,7 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
                 if type(layer) == nn.Linear:
                     layer.zp_w_kernel = nn.Linear(layer.in_features, layer.out_features, bias=False)
                     layer.zp_w_kernel.weight.data.fill_(zps_w[0])
-                    layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.cuda()
+                    layer.zp_w_kernel.weight.data = layer.zp_w_kernel.weight.data.to(device)
                     layer.unbiased_layer = nn.Linear(layer.in_features, layer.out_features, bias=False)
                     layer.unbiased_layer.weight.data = layer.weight.data
 
@@ -130,7 +134,8 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, proportions=None, s
     return qmodel
 
 
-def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step=None, bits=8, fib=False, strategy='quantile', scheme='per_out_channel'):
+def compute_quantized_layer(layer, scale_x, scale_x_next, device, proportions=None, step=None, bits=8,
+                            fib=False, strategy='quantile', scheme='per_out_channel'):
     if not type(layer) in supported_modules:
         raise TypeError("compute_quantized_layer not implemented for layer of type {}".format(type(layer).__name__))
 
@@ -138,33 +143,33 @@ def compute_quantized_layer(layer, scale_x, scale_x_next, proportions=None, step
         low_vals_w, high_vals_w = layer.weight.data.min().unsqueeze(0), layer.weight.data.max().unsqueeze(0)
     else:
         if scheme == 'per_out_channel':
-            low_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.min)
-            high_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.max)
+            low_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.min, device)
+            high_vals_w = stats_over_4d_tensor_per_channel(layer.weight.data, torch.max, device)
         else:
             low_vals_w = layer.weight.data.min().unsqueeze(0).expand(layer.out_channels)  # Still expand to match the number of out_channels
             high_vals_w = layer.weight.data.max().unsqueeze(0).expand(layer.out_channels)
 
-    scales_w, zps_w = calc_scales_zero_points(low_vals_w, high_vals_w, bits=bits, fib=fib)
+    scales_w, zps_w = calc_scales_zero_points(low_vals_w, high_vals_w, device, bits=bits, fib=fib)
     if type(layer) == nn.Conv2d:
         q_w = quantize_tensor_4d(layer.weight.data, scales_w, zps_w)
     elif type(layer) == nn.Linear:
         q_w = quantize_tensor(layer.weight.data, scales_w, zps_w)
 
     if layer.bias is not None:
-        q_b = quantize_tensor(layer.bias.data, scales_w * scale_x, torch.tensor([0], device='cuda'))
+        q_b = quantize_tensor(layer.bias.data, scales_w * scale_x, torch.tensor([0], device=device))
     else:
         q_b = None
 
     if layer.has_bn:
         bn_mults = layer.bn_mults
     else:
-        bn_mults = torch.tensor(1., device='cuda')
+        bn_mults = torch.tensor(1., device=device)
 
     combined_scales = scale_x * scales_w * bn_mults / scale_x_next
-    best_mults, best_shifts = get_mults_shifts(combined_scales, bits, ACC_BITS)
+    best_mults, best_shifts = get_mults_shifts(combined_scales, device, mult_bits=bits, shift_bits=ACC_BITS)
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
     if fib:
-        q_w, Ts = fib_quantize_tensor(q_w, proportions, step, bits=bits, strategy=strategy)
+        q_w, Ts = fib_encode_tensor(q_w, proportions, step, device, bits=bits, strategy=strategy)
     else:
         Ts = torch.ones_like(q_w)
 
@@ -206,14 +211,14 @@ def precompute_constants(qmodel, dummy_datapoint):
             i += 1
 
 
-def increase_fib_proportion(qmodel, optimizer, bits, proportions, step, strategy='quantile'):
+def increase_fib_proportion(qmodel, optimizer, bits, proportions, step, device, strategy='quantile'):
     with torch.no_grad():
         idx = 0
         for layer in qmodel.seq:
             if type(layer) in supported_modules:
                 for name, param in layer.named_parameters():
                     if name == 'weight':
-                        param.data, new_Ts = fib_quantize_tensor(param.data, proportions, step, bits=bits, strategy=strategy)
+                        param.data, new_Ts = fib_encode_tensor(param.data, proportions, step, device, bits=bits, strategy=strategy)
                         # Multiply element-wise the old Ts and the new Ts such that we always keep at 0 the Ts that already were 0
                         optimizer.param_groups[0]['Ts'][idx] = torch.mul(optimizer.param_groups[0]['Ts'][idx], new_Ts)
                         # print(optimizer.param_groups[0]['Ts'][idx].sum() / np.prod(optimizer.param_groups[0]['Ts'][idx].shape))

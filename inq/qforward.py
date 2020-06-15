@@ -78,7 +78,12 @@ def qlayer_forward(q_x, layer, computing_constant=False):
     # Rescale the result so that: we get rid of the scaling of this layer, and we scale it properly for the next layer
     # We could use int instead of long for 8 bits (no risk of overflowing the int32 range)
     if type(layer) == nn.Linear:
-        output = ((layer.mults[0] * result) >> layer.shifts[0]) + layer.zp_x_next
+        if result.device == torch.device('cpu'):
+            # The binary shifting operation overflows when the data is on cpu
+            output = ((layer.mults[0] * result) // (2 ** layer.shifts[0])) + layer.zp_x_next
+        else:
+            # This is the real operation that should be implemented on the specialized hardware: a simple binary shifting
+            output = ((layer.mults[0] * result) >> layer.shifts[0]) + layer.zp_x_next
     elif type(layer) == nn.Conv2d:
         # result shape: n x c x h x w
         # layer.mults, layer.shifts, scales shape: c
@@ -89,7 +94,12 @@ def qlayer_forward(q_x, layer, computing_constant=False):
         # Make the computations by only using int product and shifting (faster on specialized hardware if implemented properly, without a for loop)
         multiplied_result = torch.einsum("c,nchw->nchw", layer.mults, result)
         for channel in range(multiplied_result.shape[1]):
-            multiplied_result[:, channel, :, :] = multiplied_result[:, channel, :, :] >> layer.shifts[channel]
+            if multiplied_result.device == torch.device('cpu'):
+                # The binary shifting operation overflows when the data is on cpu
+                multiplied_result[:, channel, :, :] = multiplied_result[:, channel, :, :] // (2 ** layer.shifts[channel])
+            else:
+                # This is the real operation that should be implemented on the specialized hardware: a simple binary shifting
+                multiplied_result[:, channel, :, :] = multiplied_result[:, channel, :, :] >> layer.shifts[channel]
         output = multiplied_result + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0), dim=1)
 
     if log and not computing_constant:

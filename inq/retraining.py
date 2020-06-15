@@ -3,7 +3,7 @@ from inq.quantizer import *
 
 # This function descales an int (+fib) quantized network and puts it in its original form
 # It also uses the original model before int (+fib) quantization to find the exact expected structure
-def update_model(model, qmodel):
+def update_model(model, qmodel, device):
     with torch.no_grad():
         for i, qlayer in enumerate(qmodel.seq):
             if type(qlayer) in supported_modules:  # Only these layers have been modified
@@ -12,13 +12,13 @@ def update_model(model, qmodel):
                 elif type(qlayer) == nn.Linear:
                     model.seq[i].weight.data = dequantize_tensor(qlayer.weight.data, qlayer.scales_w, qlayer.zps_w)
                 if model.seq[i].bias is not None:
-                    model.seq[i].bias.data = dequantize_tensor(qlayer.bias.data, qlayer.scales_b, torch.tensor([0], device='cuda'))
+                    model.seq[i].bias.data = dequantize_tensor(qlayer.bias.data, qlayer.scales_b, torch.tensor([0], device=device))
 
 
 # This function updates the qmodel with the retrained weights from the unscaled model. It does not change
 # the quantization parameters (scales and zero_points) so it just has to quantize the unscaled model with
 # the original scales and zero_points
-def update_qmodel(qmodel, model):
+def update_qmodel(qmodel, model, device):
     with torch.no_grad():
         for i, layer in enumerate(model.seq):
             if type(layer) in supported_modules:  # Only these layers have been modified
@@ -44,12 +44,12 @@ def update_qmodel(qmodel, model):
                 if layer.has_bn:
                     bn_mults = layer.bn_mults
                 else:
-                    bn_mults = torch.tensor(1., device='cuda')
+                    bn_mults = torch.tensor(1., device=device)
                 combined_scales = layer.scale_x * layer.scales_w * bn_mults / layer.scale_x_next
-                mults, shifts = get_mults_shifts(combined_scales, qmodel.bits, ACC_BITS)
+                mults, shifts = get_mults_shifts(combined_scales, device, mult_bits=qmodel.bits, shift_bits=ACC_BITS)
                 if layer.is_last:
-                    layer.register_parameter('shifts', torch.nn.Parameter(data=torch.tensor([0], device='cuda'), requires_grad=False))
-                    layer.register_parameter('mults', torch.nn.Parameter(data=torch.tensor([1], device='cuda'), requires_grad=False))
+                    layer.register_parameter('shifts', torch.nn.Parameter(data=torch.tensor([0], device=device), requires_grad=False))
+                    layer.register_parameter('mults', torch.nn.Parameter(data=torch.tensor([1], device=device), requires_grad=False))
                 else:
                     layer.register_parameter('shifts', torch.nn.Parameter(data=shifts, requires_grad=False))
                     layer.register_parameter('mults', torch.nn.Parameter(data=mults, requires_grad=False))

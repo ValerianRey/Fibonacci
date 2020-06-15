@@ -118,7 +118,7 @@ def count_out(x, min_value, max_value, log=False):
 
 def print_dataset_name(dataset):
     color = Color.BLUE if dataset == 'cifar10' else Color.RED
-    text = "CIFAR-10" if dataset == 'cifar10' else "MNIST"
+    text = "CIFAR-10" if dataset == 'cifar10' else "MNIST" if dataset == 'mnist' else ''
     print(color + Color.BOLD + "\n\t\t\t" + text + "\n\n" + Color.END, end='')
 
 

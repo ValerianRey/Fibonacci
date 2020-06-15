@@ -89,7 +89,7 @@ def fib_code_int(num, bits=8):
 
 
 def is_fib(num, bits=8):
-    if num < 0 or num >= 2 ** bits:  # An int weight can be outside of the range before it is fib quantized (this is intended)
+    if num < 0 or num >= 2 ** bits:  # An int weight can be outside of the range before it is fib encoded (this is intended)
         return False
     last_one = False
     for bit in binary_int(num, bits):
@@ -114,12 +114,13 @@ def proportion_fib(x, bits=8):
 
 def fib_distances(x, bits=8):
     with torch.no_grad():
-        x_fib = x.int().cpu().apply_(lambda y: fib_code_int(y, bits=bits)).float().cuda()
+        device = x.device
+        x_fib = x.int().cpu().apply_(lambda y: fib_code_int(y, bits=bits)).float().to(device)
         distances = torch.abs(x - x_fib)
         return x_fib, distances
 
 
-def fib_quantize_tensor(q_tensor, proportions, step, bits=8, strategy='quantile'):
+def fib_encode_tensor(q_tensor, proportions, step, device, bits=8, strategy='quantile'):
     with torch.no_grad():
         if strategy == 'quantile':
             interpolation = 'higher'  # Higher ensures that we always at least have 'proportions[step]' weights fib encoded
@@ -153,7 +154,7 @@ def fib_quantize_tensor(q_tensor, proportions, step, bits=8, strategy='quantile'
                 proportion = 1
             else:
                 proportion = (proportions[step] - proportions[step - 1]) / (1 - proportions[step - 1])
-            q_tensor_fib = q_tensor.int().cpu().apply_(lambda y: fib_code_int(y, bits=bits)).float().cuda()
+            q_tensor_fib = q_tensor.int().cpu().apply_(lambda y: fib_code_int(y, bits=bits)).float().to(device)
             rand = torch.rand_like(q_tensor)
             ones = torch.ones_like(q_tensor)
             zeros = torch.zeros_like(q_tensor)

@@ -35,8 +35,7 @@ def gather_activation_stats(model, x, stats):
 
 # Compute the activation stats at each layer. You should do that on the training set because
 # we want to quantize the model without seeing the test / validation set.
-def gather_stats(model, loader):
-    device = 'cuda:0'
+def gather_stats(model, loader, device):
     model.eval()
     stats = {}
 
@@ -64,14 +63,14 @@ def gather_stats(model, loader):
 # These stats are for example the min / max of the activation coming into each quantized layer
 # They are used to compute scale_x and zp_x at each layer (or more precisely, to compute scale_x_next
 # and zp_x_next at the layer before the one where the stats are computed)
-def load_or_gather_stats(model, train_stats_loader, load, saves_path):
+def load_or_gather_stats(model, train_stats_loader, device, load, saves_path):
     stats_path = saves_path + 'stats.pth'
     if load:
         print("Loading stats from save, be sure to remove this when the quantization scheme changes")
         stats = torch.load(stats_path)
 
     else:
-        stats = gather_stats(model, train_stats_loader)
+        stats = gather_stats(model, train_stats_loader, device)
         torch.save(stats, stats_path)
 
     return stats
