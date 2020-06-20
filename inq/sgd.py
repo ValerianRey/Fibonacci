@@ -106,7 +106,7 @@ class SGD(Optimizer):
                     continue
                 d_p = p.grad.data
                 if weight_decay != 0:
-                    d_p.add_(weight_decay, p.data)
+                    d_p.add_(p.data, alpha=weight_decay)
                 if momentum != 0:
                     param_state = self.state[p]
                     if 'momentum_buffer' not in param_state:
@@ -114,13 +114,24 @@ class SGD(Optimizer):
                         buf.mul_(momentum).add_(d_p)
                     else:
                         buf = param_state['momentum_buffer']
-                        buf.mul_(momentum).add_(1 - dampening, d_p)
+                        buf.mul_(momentum).add_(d_p, alpha=1 - dampening)
                     if nesterov:
-                        d_p = d_p.add(momentum, buf)
+                        d_p = d_p.add(buf, alpha=momentum)
                     else:
                         d_p = buf
 
                 d_p.mul_(group['Ts'][idx])
-                p.data.add_(-group['lr'], d_p)
+                p.data.add_(d_p, alpha=-group['lr'])
 
         return loss
+
+    def reset_lr(self, base_lr):
+        state = self.state_dict()['state']
+        pg = self.state_dict()['param_groups']
+        for group in range(len(pg)):
+            pg[group]['lr'] = base_lr
+        self.load_state_dict({'state': state, 'param_groups': pg})
+
+    # Resets the optimizer without resetting the Ts
+    def reset_momentum(self):
+        self.load_state_dict({'state': {}, 'param_groups': self.state_dict()['param_groups']})
