@@ -1,4 +1,3 @@
-from inq.quantization_util import *
 from inq.qforward import *
 from examples.mnist_models import *
 from examples.supported_modules import supported_modules
@@ -6,17 +5,15 @@ from examples.supported_modules import batch_norm_modules
 import torch
 import copy
 
-ACC_BITS = 32
 
-
-def compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions=None, step=None, bits=8,
-                   fib=False, strategy='quantile', scheme='per_out_channel'):
+def compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions=None, step=None, bits=8, acc_bits=32,
+                   fib=False, strategy='quantile', scheme='per_out_channel', key='global'):
     # Copy the model into qmodel (and its device)
     qmodel = copy.deepcopy(model)
 
     # Choose which stat to use
-    low_key = 'min'
-    high_key = 'max'
+    low_key = 'min' if key == 'global' else 'avg_min'
+    high_key = 'max' if key == 'global' else 'avg_max'
 
     layers_to_quantize = []
     stat_names = []
@@ -57,6 +54,7 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions
 
         # Initialization
         qmodel.register_parameter('bits', nn.Parameter(data=torch.tensor(bits), requires_grad=False))
+        qmodel.register_parameter('acc_bits', nn.Parameter(data=torch.tensor(acc_bits), requires_grad=False))
         qmodel.register_parameter('low_val_input', nn.Parameter(data=stats['0'][low_key], requires_grad=False))
         qmodel.register_parameter('high_val_input', nn.Parameter(data=stats['0'][high_key], requires_grad=False))
         scale_x, zp_x = calc_scale_zero_point(qmodel.low_val_input, qmodel.high_val_input, device, bits=bits)
@@ -74,7 +72,7 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions
 
             q_w, q_b, shifts, mults, zps_w, scales_w, scale_x, combined_scales, Ts = \
                 compute_quantized_layer(layer, scale_x, scale_x_next, device,
-                                        proportions=proportions, step=step, bits=bits,
+                                        proportions=proportions, step=step, bits=bits, acc_bits=acc_bits,
                                         fib=fib, strategy=strategy, scheme=scheme)
 
             optimizer.param_groups[0]['Ts'][param_idx] = Ts
@@ -134,7 +132,7 @@ def compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions
     return qmodel
 
 
-def compute_quantized_layer(layer, scale_x, scale_x_next, device, proportions=None, step=None, bits=8,
+def compute_quantized_layer(layer, scale_x, scale_x_next, device, proportions=None, step=None, bits=8, acc_bits=32,
                             fib=False, strategy='quantile', scheme='per_out_channel'):
     if not type(layer) in supported_modules:
         raise TypeError("compute_quantized_layer not implemented for layer of type {}".format(type(layer).__name__))
@@ -166,7 +164,7 @@ def compute_quantized_layer(layer, scale_x, scale_x_next, device, proportions=No
         bn_mults = torch.tensor(1., device=device)
 
     combined_scales = scale_x * scales_w * bn_mults / scale_x_next
-    best_mults, best_shifts = get_mults_shifts(combined_scales, device, mult_bits=bits, shift_bits=ACC_BITS)
+    best_mults, best_shifts = get_mults_shifts(combined_scales, device, mult_bits=bits, shift_bits=acc_bits)
     # Fibonacci encode the weights (this is very under efficient due to apply_ not working on cuda)
     if fib:
         q_w, Ts = fib_encode_tensor(q_w, proportions, step, device, bits=bits, strategy=strategy)
@@ -185,16 +183,12 @@ def handle_batch_norms(qmodel):
             while (i + j) < len(qmodel.seq) and not type(qmodel.seq[i + j]) in supported_modules:
                 if type(qmodel.seq[i + j]) in batch_norm_modules:
                     if found_bn:
-                        print("ERROR: multiple batch norm layers found for one quantized layer")
+                        raise ValueError("Multiple batch norm layers found for one quantized layer. Please change model definition.")
                     found_bn = True
-                    # qmodel.seq[i].bn = qmodel.seq[i + j]  # Attach the batch norm layer to the conv2d layer
                     qmodel.seq[i].register_parameter('bn_mults', torch.nn.Parameter(
                         qmodel.seq[i + j].weight / ((qmodel.seq[i + j].running_var ** 0.5) - qmodel.seq[i + j].eps), requires_grad=False))
                     qmodel.seq[i].register_parameter('bn_add', torch.nn.Parameter(
                         qmodel.seq[i + j].bias / qmodel.seq[i].bn_mults - qmodel.seq[i + j].running_mean, requires_grad=False))
-                    # qmodel.seq[i].bn_bias = qmodel.seq[i + j].bias
-                    # qmodel.seq[i].bn_rm = qmodel.seq[i + j].running_mean
-                    # qmodel.seq[i + j] = nn.Identity()  # Remove the batch norm layer from the sequential model (replace it by identity)
                 j += 1
             qmodel.seq[i].register_parameter('has_bn', nn.Parameter(data=torch.tensor(found_bn), requires_grad=False))
 
@@ -221,7 +215,6 @@ def increase_fib_proportion(qmodel, optimizer, bits, proportions, step, device, 
                         param.data, new_Ts = fib_encode_tensor(param.data, proportions, step, device, bits=bits, strategy=strategy)
                         # Multiply element-wise the old Ts and the new Ts such that we always keep at 0 the Ts that already were 0
                         optimizer.param_groups[0]['Ts'][idx] = torch.mul(optimizer.param_groups[0]['Ts'][idx], new_Ts)
-                        # print(optimizer.param_groups[0]['Ts'][idx].sum() / np.prod(optimizer.param_groups[0]['Ts'][idx].shape))
                     if name == 'weight' or name == 'bias':
                         idx += 1
                 layer.unbiased_layer.weight.data = layer.weight.data

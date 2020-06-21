@@ -46,7 +46,7 @@ def update_qmodel(qmodel, model, device):
                 else:
                     bn_mults = torch.tensor(1., device=device)
                 combined_scales = layer.scale_x * layer.scales_w * bn_mults / layer.scale_x_next
-                mults, shifts = get_mults_shifts(combined_scales, device, mult_bits=qmodel.bits, shift_bits=ACC_BITS)
+                mults, shifts = get_mults_shifts(combined_scales, device, mult_bits=qmodel.bits, shift_bits=qmodel.acc_bits)
                 if layer.is_last:
                     layer.register_parameter('shifts', torch.nn.Parameter(data=torch.tensor([0], device=device), requires_grad=False))
                     layer.register_parameter('mults', torch.nn.Parameter(data=torch.tensor([1], device=device), requires_grad=False))

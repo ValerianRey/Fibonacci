@@ -73,10 +73,8 @@ def fib_code_int_up(num, bits=8):
 # Gives the best Fibonacci-valid int approximation for 'num'
 def fib_code_int(num, bits=8):
     if num < 0:
-        # print("Clamping " + repr(num) + " to 0")
         num = 0
     elif num >= 2 ** bits:
-        # print("Clamping " + repr(num) + " to " + repr(2 ** bits - 1))
         num = 2 ** bits - 1
     down = fib_code_int_down(num, bits)
     up = fib_code_int_up(num, bits)

@@ -3,11 +3,10 @@ from examples.supported_modules import *
 from examples.print_util import *
 
 
-def qmodel_forward(qmodel, x, computing_constants=False):
+def qmodel_forward(qmodel, x, computing_constants=False, print_clamped_values=False, verbose=False):
     if computing_constants:
         constants = []
     # Quantise before inputting into incoming layers (no dropout since this is never used for training anyway)
-    print_clamped_values = False and not computing_constants  # Never print the clamped values when collecting stats
     if print_clamped_values:
         print()
 
@@ -25,7 +24,7 @@ def qmodel_forward(qmodel, x, computing_constants=False):
                 x, constant = qlayer_forward(x, layer, computing_constant=True)
                 constants.append(constant)
             else:
-                x = qlayer_forward(x, layer)
+                x = qlayer_forward(x, layer, verbose=verbose)
             i += 1
         elif not type(layer) in batch_norm_modules:  # The batch norm is already manually handled by bn_add and bn_mult
             x = layer(x.float()).round().int()  # Some layers are not implemented for int type, so we have to cast to float
@@ -36,12 +35,11 @@ def qmodel_forward(qmodel, x, computing_constants=False):
         return x
 
 
-def qlayer_forward(q_x, layer, computing_constant=False):
+def qlayer_forward(q_x, layer, computing_constant=False, verbose=False):
     if not type(layer) in supported_modules:
         raise TypeError("qlayer_forward not implemented for layer of type {}".format(type(layer).__name__))
 
-    log = False
-    if log and not computing_constant:
+    if verbose:
         print(Color.YELLOW + "x_min=" + repr(q_x.min().item()) + ", x_max=" + repr(q_x.max().item()) + Color.END)
 
     part1 = layer(q_x.float()).int()
@@ -70,7 +68,7 @@ def qlayer_forward(q_x, layer, computing_constant=False):
         constant = layer.constant
     result = part1 - part2 + constant
 
-    if log and not computing_constant:
+    if verbose:
         print(Color.GRAY + 'result_min=' + repr(result.min().item()) + ', result_max=' + repr(result.max().item()) + Color.END)
 
     # POST-QUANTIZATION
@@ -102,7 +100,7 @@ def qlayer_forward(q_x, layer, computing_constant=False):
                 multiplied_result[:, channel, :, :] = multiplied_result[:, channel, :, :] >> layer.shifts[channel]
         output = multiplied_result + unsqueeze_1d_to_4d(layer.zp_x_next.unsqueeze(0), dim=1)
 
-    if log and not computing_constant:
+    if verbose:
         print(Color.GRAY + 'output_min=' + repr(output.min().item()) + ', output_max=' + repr(output.max().item()) + Color.END)
 
     if computing_constant:

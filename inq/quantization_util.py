@@ -100,12 +100,6 @@ def quantize_tensor_4d(x, scales, zps):
     return (unsqueeze_1d_to_4d(zps, dim=0) + (x / unsqueeze_1d_to_4d(scales, dim=0))).round()
 
 
-def quantize_4d_tensor_per_channel(x, scales, zps):
-    # TODO: use that instead of the above
-    zps_4d = unsqueeze_1d_to_4d(zps, dim=0)
-    return (torch.einsum("c,cnhw->cnhw", 1/scales, x) + zps_4d).round()
-
-
 def dequantize_tensor(q_x, scale, zp):
     return scale * (q_x.float() - zp)
 

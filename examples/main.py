@@ -37,12 +37,17 @@ settings_dict = {
     'weight_decay': 0.0005,  # L2 regularization parameter, default was 0.0005
     'weight_decay_retrain': 0.0005,
     'print_interval': 1,
+    'print_clamped_values': False,  # Print for each quantized layer how many values get clamped to the min / max of the range they have to be in
+    'verbose': False,  # Print the min / max values for each batch at each quantized layer (at qlayer input, qlayer output and after post-quantization)
+    'print_fib_info': True,  # Print the proportions of Fibonacci-encoded weights after each retraining
     'val_interval': 5,  # Use a large value if you want to avoid wasting time computing the test accuracy and printing it.
     'seed': None,  # default: None
     'quantize': True,
     'strategy': 'random',  # quantile, reverse_quantile, random
     'scheme': 'per_layer',  # per_layer, per_out_channel
+    'statistics': 'global',  # 'global' (global min/max statistics => less overflows), 'average' (min/max statistics averaged over the inputs => more entropy)
     'weight_bits': 8,
+    'acc_bits': 32,
     'iterative_steps': [0.2, 0.4, 0.6, 0.8, 1.0],
     'log_dir': "logs/",
     'pretrain': False,
@@ -167,10 +172,11 @@ def main_worker(args, shuffle=True):
 
     if args.load_qmodel_fib:
         if os.path.isfile(qmodel_fib_path):
-            # Here we compute the qmodel from
-            print("Computing qmodel from model to be able to copy the save into it")  # TODO: need to improve on that by defining a constructor for empty qmodel
-            qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions=args.iterative_steps, step=0,
-                                        bits=args.weight_bits, fib=True, strategy=args.strategy, scheme=args.scheme)
+            # In order to do that properly we would need a qmodel class and use its constructor instead of calling compute_qmodel
+            # and making useless computations to then load the values
+            print("Computing qmodel from model to be able to copy the save into it")
+            qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions=args.iterative_steps, step=0, bits=args.weight_bits,
+                                        acc_bits=args.acc_bits, fib=True, strategy=args.strategy, scheme=args.scheme, key=args.statistics)
             print("Loading checkpoint '{}'".format(qmodel_fib_path))
             checkpoint = torch.load(qmodel_fib_path)
             qmodel_fib.load_state_dict(checkpoint['state_dict'])
@@ -185,18 +191,17 @@ def main_worker(args, shuffle=True):
         optimizer = inq.SGD(model.parameters(), args.lr_retrain, momentum=args.momentum_retrain, weight_decay=args.weight_decay_retrain, weight_bits=args.weight_bits)
         quantization_epochs = len(args.iterative_steps)
 
-
-
         for qepoch in range(quantization_epochs):
             print()
             print_quantization_epoch(qepoch, quantization_epochs, args.iterative_steps[qepoch] * 100)
             print_header(color=Color.UNDERLINE)
             if qepoch == 0:  # The int quantized qmodel is only produced once
-                # validate(val_loader, model, criterion, args, device, title='Test original network')
-                qmodel_int = compute_qmodel(model, stats, optimizer, dummy_datapoint, device, bits=args.weight_bits, fib=False, scheme=args.scheme)
+                validate(val_loader, model, criterion, args, device, title='Test original network')
+                qmodel_int = compute_qmodel(model, stats, optimizer, dummy_datapoint, device, bits=args.weight_bits,
+                                            acc_bits=args.acc_bits, fib=False, scheme=args.scheme, key=args.statistics)
                 validate(val_loader, qmodel_int, criterion, args, device, quantized=True, fib=False, title='Test int')
-                qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions=args.iterative_steps, step=0,
-                                            bits=args.weight_bits, fib=True, strategy=args.strategy, scheme=args.scheme)
+                qmodel_fib = compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions=args.iterative_steps, step=0, bits=args.weight_bits,
+                                            acc_bits=args.acc_bits, fib=True, strategy=args.strategy, scheme=args.scheme, key=args.statistics)
             else:
                 increase_fib_proportion(qmodel_fib, optimizer, args.weight_bits, args.iterative_steps, qepoch, device, strategy=args.strategy)
 
@@ -222,11 +227,11 @@ def main_worker(args, shuffle=True):
             precompute_constants(qmodel_fib, dummy_datapoint)
             title = title + ' retrained'
             validate(val_loader, qmodel_fib, criterion, args, device, quantized=True, fib=True, title=title)
-            # print_fib_info(average_proportion_fib(qmodel_fib, weighted=True),
-            #                average_proportion_fib(qmodel_fib, weighted=False),
-            #                average_distance_fib(qmodel_fib, weighted=True),
-            #                average_distance_fib(qmodel_fib, weighted=False))
-            # print_seq_model(qmodel_fib, how='short')
+            if args.print_fib_info:
+                print_fib_info(average_proportion_fib(qmodel_fib, weighted=True),
+                               average_proportion_fib(qmodel_fib, weighted=False),
+                               average_distance_fib(qmodel_fib, weighted=True),
+                               average_distance_fib(qmodel_fib, weighted=False))
 
         save_checkpoint({
             'state_dict': qmodel_fib.state_dict(),
@@ -234,7 +239,7 @@ def main_worker(args, shuffle=True):
         }, filename=qmodel_fib_path)
 
     # Print all the parameters of the neural network to get an idea of how the weights are quantized
-    # print_seq_model(qmodel_fib, how='no')
+    print_seq_model(qmodel_fib, how='no')  # Use how='long' to print all parameters and stats about encoding
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args, device, retrain=False):
@@ -296,7 +301,7 @@ def validate(val_loader, model, criterion, args, device, quantized=False, fib=Fa
             # compute output
             if quantized:
                 data = data.to(device)
-                output = qmodel_forward(model, data)
+                output = qmodel_forward(model, data, print_clamped_values=args.print_clamped_values, verbose=args.verbose)
                 loss = torch.tensor(-1)
             else:
                 output = model(data)
