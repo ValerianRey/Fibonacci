@@ -46,8 +46,8 @@ settings_dict = {
     'iterative_steps': [0.2, 0.4, 0.6, 0.8, 1.0],
     'log_dir': "logs/",
     'pretrain': False,
-    'load_model': True,
-    'load_stats': True,
+    'load_model': False,
+    'load_stats': False,
     'load_qmodel_fib': False
 }
 
