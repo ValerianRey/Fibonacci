@@ -1,9 +1,7 @@
-from inq.qforward import *
-from examples.mnist_models import *
-from examples.supported_modules import supported_modules
-from examples.supported_modules import batch_norm_modules
-import torch
 import copy
+
+from quantization.qforward import *
+from quantization.supported_modules import supported_modules, batch_norm_modules
 
 
 def compute_qmodel(model, stats, optimizer, dummy_datapoint, device, proportions=None, step=None, bits=8, acc_bits=32,

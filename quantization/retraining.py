@@ -1,4 +1,4 @@
-from inq.quantizer import *
+from quantization.quantizer import *
 
 
 # This function descales an int (+fib) quantized network and puts it in its original form

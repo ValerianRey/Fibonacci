@@ -1,8 +1,8 @@
-from inq.quantizer import *
+from quantization.quantizer import *
 import torch.utils.data
 import time
-from examples.supported_modules import supported_modules
-from examples.print_util import print_gather
+from quantization.supported_modules import supported_modules
+from quantization.print_util import print_gather
 
 
 # Get Min and max of x tensor, and stores it

@@ -1,5 +1,5 @@
-from examples.supported_modules import supported_modules
-from inq.fib_util import *
+from quantization.supported_modules import supported_modules
+from quantization.fib_util import *
 
 
 class Color:

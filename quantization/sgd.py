@@ -20,8 +20,8 @@ class SGD(Optimizer):
         weight_bits (int, optional): number of bits used in the quantization of the weights
 
     Example:
-        >>> optimizer = inq.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_bits=3)
-        >>> inq_scheduler = inq.INQScheduler(optimizer, [0.5, 0.75, 1.0], strategy=pruning)
+        >>> optimizer = quantization.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_bits=3)
+        >>> inq_scheduler = quantization.INQScheduler(optimizer, [0.5, 0.75, 1.0], strategy=pruning)
         >>> inq_scheduler.step()
         >>> optimizer.zero_grad()
         >>> loss_fn(model(input), target).backward()

@@ -1,9 +1,7 @@
 import os
+from os import path
 import random
 from types import SimpleNamespace
-
-import examples.mnist_models as mnist_models
-import examples.cifar10_models as cifar10_models
 import torch.backends.cudnn as cudnn
 import torch.nn.parallel
 import torch.optim
@@ -11,18 +9,21 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-from inq.stats import *
-from examples.metrics import *
-from os import path
-from inq.retraining import *
 
-import inq
+import examples.mnist_models as mnist_models
+import examples.cifar10_models as cifar10_models
+
+import quantization
+from quantization.stats import *
+from quantization.metrics import *
+from quantization.retraining import *
+
 
 settings_dict = {
     'dataset': 'cifar10',  # 'mnist', 'cifar10'
     'arch': 'PARN18_nores_maxpool',  # 'Net', 'Net_sigmoid', 'Net_tanh', 'LeNet', 'LeNetDropout', 'PARN18', 'PARN18_nores', 'PARN18_nores_maxpool'
     'workers': 4,  # Increasing that seems to require A LOT of RAM memory (default was 8)
-    'epochs': 100,
+    'epochs': 10,
     'retrain_epochs': 5,
     'start_epoch': 0,  # Used for faster restart
     'batch_size': 64,  # default was 256
@@ -30,7 +31,7 @@ settings_dict = {
     'stats_batch_size': 1000,  # This should be a divider of the dataset size
     'lr': 0.01,  # Learning rate, default was 0.001
     'lr_retrain': 0.01,
-    'gamma': 0.97,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7, 0.95 for cifar10 is good
+    'gamma': 0.9,  # Multiplicative reduction of the learning rate at each epoch, default was 0.7, 0.95 for cifar10 is good
     'gamma_retrain': 0.85,
     'momentum': 0.9,  # Gradient momentum, default was 0.9
     'momentum_retrain': 0.5,
@@ -51,9 +52,9 @@ settings_dict = {
     'iterative_steps': [0.2, 0.4, 0.6, 0.8, 1.0],
     'log_dir': "logs/",
     'pretrain': False,
-    'load_model': False,
-    'load_stats': False,
-    'load_qmodel_fib': False
+    'load_model': True,
+    'load_stats': True,
+    'load_qmodel_fib': True
 }
 
 
@@ -118,8 +119,12 @@ def main_worker(args, shuffle=True):
     model_path = saves_path + 'model.pth'
     qmodel_fib_path = saves_path + 'qmodel_fib.pth'
 
+    # Create the directory if it does not exist yet, and then save the learned model
+    if not path.exists(saves_path):
+        os.makedirs(saves_path)
+
     criterion = nn.CrossEntropyLoss().to(device)
-    optimizer = inq.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay, weight_bits=args.weight_bits)
+    optimizer = quantization.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay, weight_bits=args.weight_bits)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=shuffle,
                                                num_workers=args.workers, pin_memory=True)
@@ -159,10 +164,6 @@ def main_worker(args, shuffle=True):
             if (epoch+1) % args.val_interval == 0:
                 validate(val_loader, model, criterion, args, device, title='Test unscaled')
 
-        # Create the directory if it does not exist yet, and then save the learned model
-        if not path.exists(saves_path):
-            os.makedirs(saves_path)
-
         save_checkpoint({
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
@@ -188,7 +189,7 @@ def main_worker(args, shuffle=True):
         else:
             print(Color.RED + "No checkpoint found at '{}'".format(qmodel_fib_path) + Color.END)
     else:
-        optimizer = inq.SGD(model.parameters(), args.lr_retrain, momentum=args.momentum_retrain, weight_decay=args.weight_decay_retrain, weight_bits=args.weight_bits)
+        optimizer = quantization.SGD(model.parameters(), args.lr_retrain, momentum=args.momentum_retrain, weight_decay=args.weight_decay_retrain, weight_bits=args.weight_bits)
         quantization_epochs = len(args.iterative_steps)
 
         for qepoch in range(quantization_epochs):

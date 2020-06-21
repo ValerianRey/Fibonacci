@@ -1,5 +1,6 @@
-from inq.fib_util import *
 import warnings
+import torch
+from quantization.fib_util import fib_code_int_down
 
 
 def calc_qmin_qmax(device, bits=8, negative=False, fib=False):
